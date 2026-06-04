@@ -4,6 +4,8 @@ server:
   port: 8080
   # US-09 : délai d'attente maximum d'une réponse backend (504 au-delà).
   timeout_seconds: 5
+  # US-11 : verbosité des logs JSON (DEBUG, INFO, WARN, ERROR).
+  log_level: "INFO"
   # US-08 : limitation de trafic par IP (Token Bucket).
   rate_limit:
     enabled: true

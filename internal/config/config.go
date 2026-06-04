@@ -5,6 +5,7 @@ package config
 import (
 	"bytes"
 	"fmt"
+	"log/slog"
 	"net/url"
 	"os"
 	"strings"
@@ -15,6 +16,10 @@ import (
 // DefaultTimeoutSeconds est le délai d'attente backend appliqué quand
 // server.timeout_seconds est absent de la configuration (US-09).
 const DefaultTimeoutSeconds = 5
+
+// DefaultLogLevel est le niveau de verbosité appliqué quand
+// server.log_level est absent de la configuration (US-11).
+const DefaultLogLevel = "INFO"
 
 // RouteConfig associe un préfixe de chemin exposé à l'URL d'un microservice cible.
 // StripPrefix (US-03) supprime le préfixe de routage de l'URL avant transfert
@@ -54,9 +59,11 @@ type GatewayConfig struct {
 		Port int `yaml:"port" json:"port"`
 		// TimeoutSeconds (US-09) borne l'attente d'une réponse backend ;
 		// DefaultTimeoutSeconds si absent.
-		TimeoutSeconds int             `yaml:"timeout_seconds" json:"timeout_seconds"`
-		CORS           CORSConfig      `yaml:"cors" json:"cors"`
-		RateLimit      RateLimitConfig `yaml:"rate_limit" json:"rate_limit"`
+		TimeoutSeconds int `yaml:"timeout_seconds" json:"timeout_seconds"`
+		// LogLevel (US-11) : DEBUG, INFO, WARN ou ERROR ; DefaultLogLevel si absent.
+		LogLevel  string          `yaml:"log_level" json:"log_level"`
+		CORS      CORSConfig      `yaml:"cors" json:"cors"`
+		RateLimit RateLimitConfig `yaml:"rate_limit" json:"rate_limit"`
 	} `yaml:"server" json:"server"`
 	AuthServiceURL string        `yaml:"auth_service_url" json:"auth_service_url"`
 	Routes         []RouteConfig `yaml:"routes" json:"routes"`
@@ -84,6 +91,12 @@ func Load(path string) (*GatewayConfig, error) {
 		cfg.Server.TimeoutSeconds = DefaultTimeoutSeconds
 	}
 
+	// US-11 : niveau de log normalisé, défaut si non précisé.
+	if cfg.Server.LogLevel == "" {
+		cfg.Server.LogLevel = DefaultLogLevel
+	}
+	cfg.Server.LogLevel = strings.ToUpper(cfg.Server.LogLevel)
+
 	if err := cfg.validate(); err != nil {
 		return nil, fmt.Errorf("configuration invalide dans %q: %w", path, err)
 	}
@@ -99,6 +112,11 @@ func (c *GatewayConfig) validate() error {
 	}
 	if c.Server.TimeoutSeconds < 1 {
 		return fmt.Errorf("server.timeout_seconds doit être >= 1, reçu %d", c.Server.TimeoutSeconds)
+	}
+	switch c.Server.LogLevel {
+	case "DEBUG", "INFO", "WARN", "ERROR":
+	default:
+		return fmt.Errorf("server.log_level doit être DEBUG, INFO, WARN ou ERROR, reçu %q", c.Server.LogLevel)
 	}
 	if len(c.Routes) == 0 {
 		return fmt.Errorf("au moins une route doit être définie")
@@ -138,6 +156,20 @@ func (c *GatewayConfig) validate() error {
 		}
 	}
 	return nil
+}
+
+// SlogLevel traduit server.log_level en niveau log/slog (US-11).
+func (c *GatewayConfig) SlogLevel() slog.Level {
+	switch c.Server.LogLevel {
+	case "DEBUG":
+		return slog.LevelDebug
+	case "WARN":
+		return slog.LevelWarn
+	case "ERROR":
+		return slog.LevelError
+	default:
+		return slog.LevelInfo
+	}
 }
 
 // validateHTTPURL vérifie qu'une URL est parsable, en http(s) et avec un hôte.
