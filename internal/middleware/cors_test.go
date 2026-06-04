@@ -16,8 +16,6 @@ func testCORSConfig() config.CORSConfig {
 	}
 }
 
-// serve exécute une requête à travers le middleware et indique si le handler
-// suivant (le routeur/backend) a été appelé.
 func serve(t *testing.T, cfg config.CORSConfig, method, origin string) (*httptest.ResponseRecorder, bool) {
 	t.Helper()
 	nextCalled := false
@@ -35,8 +33,6 @@ func serve(t *testing.T, cfg config.CORSConfig, method, origin string) (*httptes
 	return rec, nextCalled
 }
 
-// Scénario 1 — Preflight OPTIONS avec origine autorisée : 204, en-têtes CORS,
-// jamais transmis au backend.
 func TestPreflightAllowedOrigin(t *testing.T) {
 	rec, nextCalled := serve(t, testCORSConfig(), http.MethodOptions, "http://localhost:3000")
 
@@ -57,8 +53,6 @@ func TestPreflightAllowedOrigin(t *testing.T) {
 	}
 }
 
-// Scénario 2 — Requête standard avec origine autorisée : transmise au backend,
-// Allow-Origin ajouté à la réponse.
 func TestStandardRequestAllowedOrigin(t *testing.T) {
 	rec, nextCalled := serve(t, testCORSConfig(), http.MethodGet, "https://mon-app-front.com")
 
@@ -73,7 +67,6 @@ func TestStandardRequestAllowedOrigin(t *testing.T) {
 	}
 }
 
-// Scénario 3 — Origine non autorisée : pas d'en-tête Allow-Origin.
 func TestDisallowedOriginGetsNoAllowOrigin(t *testing.T) {
 	for _, method := range []string{http.MethodGet, http.MethodOptions} {
 		t.Run(method, func(t *testing.T) {
@@ -85,8 +78,6 @@ func TestDisallowedOriginGetsNoAllowOrigin(t *testing.T) {
 	}
 }
 
-// Une requête standard d'origine non autorisée reste transmise au backend
-// (c'est le navigateur qui bloque, pas le gateway).
 func TestDisallowedOriginStillForwarded(t *testing.T) {
 	_, nextCalled := serve(t, testCORSConfig(), http.MethodGet, "https://evil.com")
 	if !nextCalled {
@@ -94,7 +85,6 @@ func TestDisallowedOriginStillForwarded(t *testing.T) {
 	}
 }
 
-// Sans en-tête Origin (requête same-origin ou non-navigateur) : pas d'Allow-Origin.
 func TestNoOriginHeader(t *testing.T) {
 	rec, nextCalled := serve(t, testCORSConfig(), http.MethodGet, "")
 	if got := rec.Header().Get("Access-Control-Allow-Origin"); got != "" {
@@ -105,7 +95,6 @@ func TestNoOriginHeader(t *testing.T) {
 	}
 }
 
-// Wildcard "*" : Allow-Origin vaut "*" quelle que soit l'origine.
 func TestWildcardOrigin(t *testing.T) {
 	cfg := testCORSConfig()
 	cfg.AllowedOrigins = []string{"*"}
@@ -115,7 +104,6 @@ func TestWildcardOrigin(t *testing.T) {
 	}
 }
 
-// L'en-tête Vary: Origin est positionné pour les caches.
 func TestVaryOriginHeader(t *testing.T) {
 	rec, _ := serve(t, testCORSConfig(), http.MethodGet, "http://localhost:3000")
 	if got := rec.Header().Get("Vary"); got != "Origin" {
@@ -123,7 +111,6 @@ func TestVaryOriginHeader(t *testing.T) {
 	}
 }
 
-// Configuration CORS vide : aucun en-tête CORS, trafic transmis normalement.
 func TestEmptyCORSConfig(t *testing.T) {
 	rec, nextCalled := serve(t, config.CORSConfig{}, http.MethodGet, "http://localhost:3000")
 	if got := rec.Header().Get("Access-Control-Allow-Origin"); got != "" {

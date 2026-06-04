@@ -1,5 +1,3 @@
-// Package config charge et valide la configuration statique de routage
-// du gateway au démarrage (US-01 / SCRUM-5).
 package config
 
 import (
@@ -13,19 +11,10 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-// DefaultTimeoutSeconds est le délai d'attente backend appliqué quand
-// server.timeout_seconds est absent de la configuration (US-09).
 const DefaultTimeoutSeconds = 5
 
-// DefaultLogLevel est le niveau de verbosité appliqué quand
-// server.log_level est absent de la configuration (US-11).
 const DefaultLogLevel = "INFO"
 
-// RouteConfig associe un préfixe de chemin exposé à l'URL d'un microservice cible.
-// StripPrefix (US-03) supprime le préfixe de routage de l'URL avant transfert
-// au backend ; désactivé par défaut.
-// RequireAuth (US-05) exige la validation du token auprès du service
-// d'authentification avant transfert ; désactivé par défaut (route publique).
 type RouteConfig struct {
 	PathPrefix     string `yaml:"path_prefix" json:"path_prefix"`
 	DestinationURL string `yaml:"destination_url" json:"destination_url"`
@@ -33,34 +22,24 @@ type RouteConfig struct {
 	RequireAuth    bool   `yaml:"require_auth" json:"require_auth"`
 }
 
-// CORSConfig définit la politique CORS globale appliquée par le gateway
-// (US-04) : seules les origines listées reçoivent les en-têtes CORS.
 type CORSConfig struct {
 	AllowedOrigins []string `yaml:"allowed_origins" json:"allowed_origins"`
 	AllowedMethods []string `yaml:"allowed_methods" json:"allowed_methods"`
 	AllowedHeaders []string `yaml:"allowed_headers" json:"allowed_headers"`
 }
 
-// RateLimitConfig définit la limitation de trafic par IP (US-08) selon
-// l'algorithme du Token Bucket : RequestsPerSecond jetons par seconde,
-// rafale maximale de Burst requêtes.
 type RateLimitConfig struct {
 	Enabled           bool    `yaml:"enabled" json:"enabled"`
 	RequestsPerSecond float64 `yaml:"requests_per_second" json:"requests_per_second"`
 	Burst             int     `yaml:"burst" json:"burst"`
 }
 
-// GatewayConfig est la configuration complète du gateway, chargée une seule
-// fois au lancement de l'exécutable.
-// AuthServiceURL (US-05) est l'endpoint de validation du microservice
-// d'authentification ; obligatoire dès qu'une route a require_auth: true.
 type GatewayConfig struct {
 	Server struct {
 		Port int `yaml:"port" json:"port"`
-		// TimeoutSeconds (US-09) borne l'attente d'une réponse backend ;
-		// DefaultTimeoutSeconds si absent.
+
 		TimeoutSeconds int `yaml:"timeout_seconds" json:"timeout_seconds"`
-		// LogLevel (US-11) : DEBUG, INFO, WARN ou ERROR ; DefaultLogLevel si absent.
+
 		LogLevel  string          `yaml:"log_level" json:"log_level"`
 		CORS      CORSConfig      `yaml:"cors" json:"cors"`
 		RateLimit RateLimitConfig `yaml:"rate_limit" json:"rate_limit"`
@@ -69,10 +48,6 @@ type GatewayConfig struct {
 	Routes         []RouteConfig `yaml:"routes" json:"routes"`
 }
 
-// Load lit le fichier YAML à l'emplacement donné, le parse en structs
-// strictement typés et valide son contenu. Toute erreur (fichier absent,
-// syntaxe invalide, données non conformes) est retournée à l'appelant,
-// qui doit interrompre le démarrage.
 func Load(path string) (*GatewayConfig, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
@@ -81,17 +56,15 @@ func Load(path string) (*GatewayConfig, error) {
 
 	var cfg GatewayConfig
 	dec := yaml.NewDecoder(bytes.NewReader(data))
-	dec.KnownFields(true) // rejette les champs inconnus : parsing strictement typé
+	dec.KnownFields(true)
 	if err := dec.Decode(&cfg); err != nil {
 		return nil, fmt.Errorf("parsing du fichier de configuration %q: %w", path, err)
 	}
 
-	// US-09 : timeout backend par défaut si non précisé.
 	if cfg.Server.TimeoutSeconds == 0 {
 		cfg.Server.TimeoutSeconds = DefaultTimeoutSeconds
 	}
 
-	// US-11 : niveau de log normalisé, défaut si non précisé.
 	if cfg.Server.LogLevel == "" {
 		cfg.Server.LogLevel = DefaultLogLevel
 	}
@@ -103,9 +76,6 @@ func Load(path string) (*GatewayConfig, error) {
 	return &cfg, nil
 }
 
-// validate vérifie la cohérence de la configuration : port valide,
-// au moins une route, préfixes bien formés et uniques, URL cibles conformes,
-// et présence de auth_service_url dès qu'une route est protégée.
 func (c *GatewayConfig) validate() error {
 	if c.Server.Port < 1 || c.Server.Port > 65535 {
 		return fmt.Errorf("server.port doit être compris entre 1 et 65535, reçu %d", c.Server.Port)
@@ -158,7 +128,6 @@ func (c *GatewayConfig) validate() error {
 	return nil
 }
 
-// SlogLevel traduit server.log_level en niveau log/slog (US-11).
 func (c *GatewayConfig) SlogLevel() slog.Level {
 	switch c.Server.LogLevel {
 	case "DEBUG":
@@ -172,7 +141,6 @@ func (c *GatewayConfig) SlogLevel() slog.Level {
 	}
 }
 
-// validateHTTPURL vérifie qu'une URL est parsable, en http(s) et avec un hôte.
 func validateHTTPURL(raw string) error {
 	u, err := url.Parse(raw)
 	if err != nil {

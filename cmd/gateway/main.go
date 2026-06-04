@@ -18,14 +18,11 @@ func main() {
 	configPath := flag.String("config", "config.yaml", "chemin du fichier de configuration de routage")
 	flag.Parse()
 
-	// US-01 : la configuration est chargée une seule fois au démarrage.
-	// Tout fichier absent, malformé ou invalide interrompt immédiatement le processus.
 	cfg, err := config.Load(*configPath)
 	if err != nil {
 		log.Fatalf("démarrage impossible: %v", err)
 	}
 
-	// US-11 : logger global structuré JSON sur stdout, verbosité issue de la config.
 	logger := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: cfg.SlogLevel()}))
 	slog.SetDefault(logger)
 
@@ -42,8 +39,6 @@ func main() {
 		)
 	}
 
-	// US-05 : les routes require_auth valident le token auprès du
-	// microservice d'authentification avant tout transfert.
 	var protect func(http.Handler) http.Handler
 	if cfg.AuthServiceURL != "" {
 		authClient := middleware.NewAuthClient(cfg.AuthServiceURL)
@@ -52,8 +47,6 @@ func main() {
 		}
 	}
 
-	// US-02 : le routeur reverse proxy traite tout le trafic ;
-	// /health reste servi en direct par le gateway.
 	router, err := proxy.NewRouter(cfg, protect)
 	if err != nil {
 		logger.Error("démarrage impossible", slog.String("error", err.Error()))
@@ -63,12 +56,8 @@ func main() {
 	mux.HandleFunc("GET /health", health.Handler)
 	mux.Handle("/", router)
 
-	// US-04 : la politique CORS est centralisée dans un middleware global
-	// qui englobe tout le pipeline (preflight intercepté avant le routeur).
 	handler := middleware.CORSMiddleware(cfg.Server.CORS, mux)
 
-	// US-08 : le rate limiting par IP est le bouclier le plus externe,
-	// il protège l'ensemble du pipeline (CORS compris).
 	if cfg.Server.RateLimit.Enabled {
 		rl := middleware.NewRateLimiter(cfg.Server.RateLimit.RequestsPerSecond, cfg.Server.RateLimit.Burst)
 		handler = rl.Middleware(handler)
@@ -78,12 +67,8 @@ func main() {
 		)
 	}
 
-	// US-11 : access log JSON pour chaque requête, statut réel inclus.
 	handler = middleware.LoggingMiddleware(logger, handler)
 
-	// US-10 : le Correlation ID est initié tout en haut de la chaîne,
-	// avant même le logging et le rate limiting, pour tracer y compris
-	// les requêtes rejetées.
 	handler = middleware.CorrelationIDMiddleware(handler)
 
 	addr := fmt.Sprintf(":%d", cfg.Server.Port)

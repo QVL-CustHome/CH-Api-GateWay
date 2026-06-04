@@ -10,7 +10,6 @@ import (
 
 const validAuthJSON = `{"user_id":"123e4567-e89b-12d3-a456-426614174000","role":"admin"}`
 
-// US-06 — validation syntaxique locale de l'en-tête Authorization.
 func TestExtractBearerToken(t *testing.T) {
 	cases := []struct {
 		name      string
@@ -47,8 +46,6 @@ func TestExtractBearerToken(t *testing.T) {
 	}
 }
 
-// authBackend simule le microservice d'authentification (Rust) : il capture
-// l'en-tête Authorization reçu et répond avec le statut et le corps donnés.
 func authBackend(t *testing.T, status int, body string) (*httptest.Server, *string) {
 	t.Helper()
 	var receivedAuth string
@@ -63,10 +60,6 @@ func authBackend(t *testing.T, status int, body string) (*httptest.Server, *stri
 	return srv, &receivedAuth
 }
 
-// serveAuth exécute une requête à travers le middleware d'auth.
-// extraHeaders est appliqué à la requête entrante (ex: en-têtes forgés).
-// Retourne la réponse, si le handler suivant a été appelé, et les en-têtes
-// de la requête tels que vus par ce handler (le backend cible).
 func serveAuth(t *testing.T, authURL, authorization string, extraHeaders map[string]string) (*httptest.ResponseRecorder, bool, http.Header) {
 	t.Helper()
 	nextCalled := false
@@ -89,8 +82,6 @@ func serveAuth(t *testing.T, authURL, authorization string, extraHeaders map[str
 	return rec, nextCalled, nextHeaders
 }
 
-// US-05 Scénario 1 — Token valide : le service d'auth reçoit le token,
-// répond 200, la requête est transférée au backend cible.
 func TestAuthValidToken(t *testing.T) {
 	auth, receivedAuth := authBackend(t, http.StatusOK, validAuthJSON)
 
@@ -107,8 +98,6 @@ func TestAuthValidToken(t *testing.T) {
 	}
 }
 
-// US-05 Scénario 2 — Token absent ou format incorrect : 401 direct, le service
-// d'authentification n'est jamais appelé.
 func TestAuthMissingOrMalformedToken(t *testing.T) {
 	cases := []struct {
 		name          string
@@ -142,8 +131,6 @@ func TestAuthMissingOrMalformedToken(t *testing.T) {
 	}
 }
 
-// US-05 Scénario 3 — Token invalide ou expiré : l'erreur du service d'auth
-// (401/403) est retransmise au client, le backend cible n'est jamais joint.
 func TestAuthInvalidTokenForwardsAuthError(t *testing.T) {
 	for _, status := range []int{http.StatusUnauthorized, http.StatusForbidden} {
 		t.Run(http.StatusText(status), func(t *testing.T) {
@@ -161,9 +148,8 @@ func TestAuthInvalidTokenForwardsAuthError(t *testing.T) {
 	}
 }
 
-// US-05 Scénario 4 — Service d'authentification injoignable : 503 au client.
 func TestAuthServiceUnreachable(t *testing.T) {
-	// Serveur fermé immédiatement : connexion refusée.
+
 	auth := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}))
 	url := auth.URL
 	auth.Close()
@@ -178,10 +164,9 @@ func TestAuthServiceUnreachable(t *testing.T) {
 	}
 }
 
-// US-05 Scénario 4 (bis) — Service d'authentification trop lent : timeout → 503.
 func TestAuthServiceTimeout(t *testing.T) {
 	auth := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		time.Sleep(authTimeout + 200*time.Millisecond) // dépasse le timeout du client
+		time.Sleep(authTimeout + 200*time.Millisecond)
 		w.WriteHeader(http.StatusOK)
 	}))
 	t.Cleanup(auth.Close)
@@ -196,8 +181,6 @@ func TestAuthServiceTimeout(t *testing.T) {
 	}
 }
 
-// URL d'auth inconstructible (cas défensif, normalement bloqué par la
-// validation de la config) : 500 sans atteindre le backend.
 func TestAuthInvalidAuthURL(t *testing.T) {
 	rec, nextCalled, _ := serveAuth(t, "http://invalid%zz", "Bearer token", nil)
 
@@ -209,7 +192,6 @@ func TestAuthInvalidAuthURL(t *testing.T) {
 	}
 }
 
-// Réponse inattendue du service d'auth (ex: 500) : rien ne passe, 503.
 func TestAuthServiceUnexpectedStatus(t *testing.T) {
 	auth, _ := authBackend(t, http.StatusInternalServerError, "")
 
@@ -223,8 +205,6 @@ func TestAuthServiceUnexpectedStatus(t *testing.T) {
 	}
 }
 
-// US-07 Scénario 1 — Injection du contexte utilisateur : le backend reçoit
-// X-User-Id et X-User-Role issus de la réponse du service d'auth.
 func TestUserContextInjection(t *testing.T) {
 	auth, _ := authBackend(t, http.StatusOK, validAuthJSON)
 
@@ -241,8 +221,6 @@ func TestUserContextInjection(t *testing.T) {
 	}
 }
 
-// US-07 Scénario 2 — Anti-spoofing : les en-têtes X-User-* forgés par le
-// client sont écrasés, seules les valeurs légitimes atteignent le backend.
 func TestSpoofedUserHeadersAreOverwritten(t *testing.T) {
 	auth, _ := authBackend(t, http.StatusOK, validAuthJSON)
 	forged := map[string]string{
@@ -266,8 +244,6 @@ func TestSpoofedUserHeadersAreOverwritten(t *testing.T) {
 	}
 }
 
-// US-07 Scénario 2 (bis) — En-têtes forgés sans token valide : la requête
-// est rejetée et n'atteint jamais le backend.
 func TestSpoofedUserHeadersWithoutToken(t *testing.T) {
 	auth, _ := authBackend(t, http.StatusOK, validAuthJSON)
 	forged := map[string]string{HeaderUserID: "admin-forge"}
@@ -282,8 +258,6 @@ func TestSpoofedUserHeadersWithoutToken(t *testing.T) {
 	}
 }
 
-// US-07 Scénario 3 — Réponse 200 du service d'auth mais JSON invalide ou
-// incomplet : 500, la requête n'est pas transmise au backend.
 func TestMalformedAuthResponse(t *testing.T) {
 	cases := []struct {
 		name string
@@ -310,8 +284,6 @@ func TestMalformedAuthResponse(t *testing.T) {
 	}
 }
 
-// US-07 — Rôle absent de la réponse : X-User-Id injecté, X-User-Role omis
-// (et jamais une valeur forgée résiduelle).
 func TestRoleAbsentOmitsRoleHeader(t *testing.T) {
 	auth, _ := authBackend(t, http.StatusOK, `{"user_id":"user-1"}`)
 	forged := map[string]string{HeaderUserRole: "super-admin"}

@@ -8,7 +8,6 @@ import (
 	"testing"
 )
 
-// writeTempConfig écrit un fichier de configuration temporaire et retourne son chemin.
 func writeTempConfig(t *testing.T, content string) string {
 	t.Helper()
 	path := filepath.Join(t.TempDir(), "config.yaml")
@@ -28,7 +27,6 @@ routes:
     destination_url: "http://localhost:8082"
 `
 
-// Scénario 1 — Fichier valide et démarrage réussi.
 func TestLoadValidFile(t *testing.T) {
 	cfg, err := Load(writeTempConfig(t, validYAML))
 	if err != nil {
@@ -52,7 +50,6 @@ func TestLoadValidFile(t *testing.T) {
 	}
 }
 
-// US-09 — timeout_seconds est parsé ; défaut appliqué si absent ; négatif rejeté.
 func TestLoadTimeoutSeconds(t *testing.T) {
 	yaml := `
 server:
@@ -95,11 +92,10 @@ routes:
 	}
 }
 
-// US-11 — log_level est parsé (insensible à la casse), défaut INFO, mappé sur slog.
 func TestLoadLogLevel(t *testing.T) {
 	cases := []struct {
 		name      string
-		yamlLevel string // vide = clé absente
+		yamlLevel string
 		want      string
 		wantSlog  slog.Level
 	}{
@@ -135,7 +131,6 @@ routes:
 	}
 }
 
-// US-11 — niveau de log inconnu : configuration rejetée.
 func TestLoadInvalidLogLevel(t *testing.T) {
 	yaml := `
 server:
@@ -150,7 +145,6 @@ routes:
 	}
 }
 
-// US-08 — le bloc server.rate_limit est parsé et validé.
 func TestLoadRateLimitConfig(t *testing.T) {
 	yaml := `
 server:
@@ -173,7 +167,6 @@ routes:
 	}
 }
 
-// US-08 — rate_limit activé avec des valeurs invalides : configuration rejetée.
 func TestLoadInvalidRateLimitConfig(t *testing.T) {
 	cases := []struct {
 		name  string
@@ -201,7 +194,6 @@ routes:
 	}
 }
 
-// US-08 — bloc désactivé : les valeurs ne sont pas contrôlées.
 func TestLoadDisabledRateLimitSkipsValidation(t *testing.T) {
 	yaml := `
 server:
@@ -217,7 +209,6 @@ routes:
 	}
 }
 
-// US-05 — auth_service_url et require_auth sont parsés.
 func TestLoadAuthConfig(t *testing.T) {
 	yaml := `
 server:
@@ -246,7 +237,6 @@ routes:
 	}
 }
 
-// US-05 — require_auth sans auth_service_url : configuration rejetée.
 func TestLoadRequireAuthWithoutAuthServiceURL(t *testing.T) {
 	yaml := `
 server:
@@ -261,7 +251,6 @@ routes:
 	}
 }
 
-// US-05 — auth_service_url invalide : configuration rejetée.
 func TestLoadInvalidAuthServiceURL(t *testing.T) {
 	yaml := `
 server:
@@ -276,7 +265,6 @@ routes:
 	}
 }
 
-// US-04 — le bloc server.cors est parsé.
 func TestLoadCORSConfig(t *testing.T) {
 	yaml := `
 server:
@@ -309,7 +297,6 @@ routes:
 	}
 }
 
-// US-03 — le champ strip_prefix est parsé, et vaut false par défaut.
 func TestLoadStripPrefix(t *testing.T) {
 	yaml := `
 server:
@@ -333,7 +320,6 @@ routes:
 	}
 }
 
-// Scénario 2 — Fichier introuvable.
 func TestLoadFileNotFound(t *testing.T) {
 	_, err := Load(filepath.Join(t.TempDir(), "inexistant.yaml"))
 	if err == nil {
@@ -344,7 +330,6 @@ func TestLoadFileNotFound(t *testing.T) {
 	}
 }
 
-// Scénario 3 — Fichier malformé ou données invalides.
 func TestLoadMalformedYAML(t *testing.T) {
 	_, err := Load(writeTempConfig(t, "server: [port: 8080\nroutes"))
 	if err == nil {
