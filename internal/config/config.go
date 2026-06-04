@@ -20,6 +20,10 @@ const DefaultMaxBodyBytes = 10 << 20
 
 const DefaultAuthServiceTimeoutMs = 100
 
+// US-11 : cookie HttpOnly posé par l'Authenticator au login,
+// lu en complément du header Authorization (qui prime).
+const DefaultAuthCookieName = "ch_token"
+
 type RouteConfig struct {
 	PathPrefix     string `yaml:"path_prefix" json:"path_prefix"`
 	DestinationURL string `yaml:"destination_url" json:"destination_url"`
@@ -59,6 +63,7 @@ type GatewayConfig struct {
 	} `yaml:"server" json:"server"`
 	AuthServiceURL       string        `yaml:"auth_service_url" json:"auth_service_url"`
 	AuthServiceTimeoutMs int           `yaml:"auth_service_timeout_ms" json:"auth_service_timeout_ms"`
+	AuthCookieName       string        `yaml:"auth_cookie_name" json:"auth_cookie_name"`
 	Routes               []RouteConfig `yaml:"routes" json:"routes"`
 }
 
@@ -85,6 +90,10 @@ func Load(path string) (*GatewayConfig, error) {
 
 	if cfg.AuthServiceTimeoutMs == 0 {
 		cfg.AuthServiceTimeoutMs = DefaultAuthServiceTimeoutMs
+	}
+
+	if cfg.AuthCookieName == "" {
+		cfg.AuthCookieName = DefaultAuthCookieName
 	}
 
 	if cfg.Server.LogLevel == "" {

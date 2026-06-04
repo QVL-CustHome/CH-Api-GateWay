@@ -36,9 +36,11 @@ const maxAuthResponseBytes = 64 << 10
 type AuthClient struct {
 	client  *http.Client
 	authURL string
+	// US-11 : nom du cookie HttpOnly porteur du token (fallback du header).
+	cookieName string
 }
 
-func NewAuthClient(url string, timeout time.Duration) *AuthClient {
+func NewAuthClient(url string, timeout time.Duration, cookieName string) *AuthClient {
 	return &AuthClient{
 		client: &http.Client{
 			Timeout: timeout,
@@ -48,7 +50,8 @@ func NewAuthClient(url string, timeout time.Duration) *AuthClient {
 				IdleConnTimeout:     90 * time.Second,
 			},
 		},
-		authURL: url,
+		authURL:    url,
+		cookieName: cookieName,
 	}
 }
 
@@ -58,7 +61,7 @@ func AuthMiddleware(authClient *AuthClient, portal string, next http.Handler) ht
 		r.Header.Del(HeaderUserID)
 		r.Header.Del(HeaderUserRole)
 
-		token, err := extractBearerToken(r)
+		token, err := extractToken(r, authClient.cookieName)
 		if err != nil {
 			http.Error(w, "Unauthorized", http.StatusUnauthorized)
 			return
@@ -110,6 +113,26 @@ func AuthMiddleware(authClient *AuthClient, portal string, next http.Handler) ht
 			http.Error(w, "Service Unavailable", http.StatusServiceUnavailable)
 		}
 	})
+}
+
+// US-11 : le header Authorization prime ; en son absence, le token est lu
+// depuis le cookie HttpOnly posé au login par l'Authenticator. Un header
+// présent mais malformé reste une erreur — pas de repli silencieux.
+// Dans les deux cas le token part en Authorization: Bearer vers /validate.
+func extractToken(r *http.Request, cookieName string) (string, error) {
+	if r.Header.Get("Authorization") != "" {
+		return extractBearerToken(r)
+	}
+
+	if cookieName != "" {
+		if cookie, err := r.Cookie(cookieName); err == nil {
+			if token := strings.TrimSpace(cookie.Value); token != "" {
+				return token, nil
+			}
+		}
+	}
+
+	return "", ErrMissingAuthHeader
 }
 
 func extractBearerToken(r *http.Request) (string, error) {
