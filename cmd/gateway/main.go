@@ -13,10 +13,8 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/custhome/ch-api-gateway/internal/app"
 	"github.com/custhome/ch-api-gateway/internal/config"
-	"github.com/custhome/ch-api-gateway/internal/health"
-	"github.com/custhome/ch-api-gateway/internal/middleware"
-	"github.com/custhome/ch-api-gateway/internal/proxy"
 	"github.com/custhome/ch-api-gateway/internal/server"
 )
 
@@ -44,41 +42,7 @@ func main() {
 			slog.Bool("require_auth", r.RequireAuth),
 		)
 	}
-
-	var protect func(http.Handler) http.Handler
-	if cfg.AuthServiceURL != "" {
-		authClient := middleware.NewAuthClient(cfg.AuthServiceURL)
-		protect = func(next http.Handler) http.Handler {
-			return middleware.AuthMiddleware(authClient, next)
-		}
-	}
-
-	router, err := proxy.NewRouter(cfg, protect)
-	if err != nil {
-		logger.Error("démarrage impossible", slog.String("error", err.Error()))
-		os.Exit(1)
-	}
-	mux := http.NewServeMux()
-	mux.HandleFunc("GET /health", health.Handler)
-	mux.Handle("/", router)
-
-	handler := middleware.CORSMiddleware(cfg.Server.CORS, mux)
-
-	handler = middleware.StripUntrustedHeadersMiddleware(handler)
-
-	handler = middleware.MaxBodyBytesMiddleware(cfg.Server.MaxBodyBytes, handler)
-
-	extractor, err := middleware.NewIPExtractor(cfg.Server.RateLimit.TrustedProxies)
-	if err != nil {
-		logger.Error("démarrage impossible", slog.String("error", err.Error()))
-		os.Exit(1)
-	}
-
-	onShutdown := []func(){}
 	if cfg.Server.RateLimit.Enabled {
-		rl := middleware.NewRateLimiter(cfg.Server.RateLimit.RequestsPerSecond, cfg.Server.RateLimit.Burst, extractor, "/health")
-		handler = rl.Middleware(handler)
-		onShutdown = append(onShutdown, rl.Stop)
 		logger.Info("rate limiting actif",
 			slog.Float64("requests_per_second", cfg.Server.RateLimit.RequestsPerSecond),
 			slog.Int("burst", cfg.Server.RateLimit.Burst),
@@ -86,9 +50,11 @@ func main() {
 		)
 	}
 
-	handler = middleware.LoggingMiddleware(logger, extractor, handler)
-
-	handler = middleware.CorrelationIDMiddleware(handler)
+	handler, onShutdown, err := app.BuildHandler(cfg, logger)
+	if err != nil {
+		logger.Error("démarrage impossible", slog.String("error", err.Error()))
+		os.Exit(1)
+	}
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()

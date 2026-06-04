@@ -3,6 +3,7 @@ package middleware
 import (
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 )
 
@@ -30,6 +31,24 @@ func TestStripUntrustedHeadersRemovesForgedUserHeaders(t *testing.T) {
 	}
 	if seenCustom != "conserve" {
 		t.Errorf("X-Custom = %q, les autres en-têtes ne doivent pas être touchés", seenCustom)
+	}
+}
+
+func TestAuthOversizedResponseRejected(t *testing.T) {
+	huge := `{"user_id":"` + strings.Repeat("a", 70_000) + `","role":"admin"}`
+	auth := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte(huge))
+	}))
+	t.Cleanup(auth.Close)
+
+	rec, nextCalled, _ := serveAuth(t, auth.URL, "Bearer token-valide", nil)
+
+	if rec.Code != http.StatusInternalServerError {
+		t.Errorf("statut = %d, want 500 pour une réponse d'auth démesurée", rec.Code)
+	}
+	if nextCalled {
+		t.Error("la requête ne doit pas atteindre le backend")
 	}
 }
 

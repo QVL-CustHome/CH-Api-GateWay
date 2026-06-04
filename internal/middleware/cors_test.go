@@ -111,6 +111,28 @@ func TestVaryOriginHeader(t *testing.T) {
 	}
 }
 
+func TestCORSMaxAgeOnPreflight(t *testing.T) {
+	cfg := testCORSConfig()
+	cfg.MaxAgeSeconds = 600
+
+	rec, _ := serve(t, cfg, http.MethodOptions, "http://localhost:3000")
+	if got := rec.Header().Get("Access-Control-Max-Age"); got != "600" {
+		t.Errorf("Max-Age = %q, want 600", got)
+	}
+
+	rec, _ = serve(t, cfg, http.MethodGet, "http://localhost:3000")
+	if got := rec.Header().Get("Access-Control-Max-Age"); got != "" {
+		t.Errorf("Max-Age = %q sur une requête standard, want absent", got)
+	}
+}
+
+func TestCORSMaxAgeAbsentWhenUnset(t *testing.T) {
+	rec, _ := serve(t, testCORSConfig(), http.MethodOptions, "http://localhost:3000")
+	if got := rec.Header().Get("Access-Control-Max-Age"); got != "" {
+		t.Errorf("Max-Age = %q sans configuration, want absent", got)
+	}
+}
+
 func TestEmptyCORSConfig(t *testing.T) {
 	rec, nextCalled := serve(t, config.CORSConfig{}, http.MethodGet, "http://localhost:3000")
 	if got := rec.Header().Get("Access-Control-Allow-Origin"); got != "" {
