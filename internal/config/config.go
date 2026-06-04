@@ -15,10 +15,13 @@ import (
 // RouteConfig associe un préfixe de chemin exposé à l'URL d'un microservice cible.
 // StripPrefix (US-03) supprime le préfixe de routage de l'URL avant transfert
 // au backend ; désactivé par défaut.
+// RequireAuth (US-05) exige la validation du token auprès du service
+// d'authentification avant transfert ; désactivé par défaut (route publique).
 type RouteConfig struct {
 	PathPrefix     string `yaml:"path_prefix" json:"path_prefix"`
 	DestinationURL string `yaml:"destination_url" json:"destination_url"`
 	StripPrefix    bool   `yaml:"strip_prefix" json:"strip_prefix"`
+	RequireAuth    bool   `yaml:"require_auth" json:"require_auth"`
 }
 
 // CORSConfig définit la politique CORS globale appliquée par le gateway
@@ -31,12 +34,15 @@ type CORSConfig struct {
 
 // GatewayConfig est la configuration complète du gateway, chargée une seule
 // fois au lancement de l'exécutable.
+// AuthServiceURL (US-05) est l'endpoint de validation du microservice
+// d'authentification ; obligatoire dès qu'une route a require_auth: true.
 type GatewayConfig struct {
 	Server struct {
 		Port int        `yaml:"port" json:"port"`
 		CORS CORSConfig `yaml:"cors" json:"cors"`
 	} `yaml:"server" json:"server"`
-	Routes []RouteConfig `yaml:"routes" json:"routes"`
+	AuthServiceURL string        `yaml:"auth_service_url" json:"auth_service_url"`
+	Routes         []RouteConfig `yaml:"routes" json:"routes"`
 }
 
 // Load lit le fichier YAML à l'emplacement donné, le parse en structs
@@ -63,13 +69,20 @@ func Load(path string) (*GatewayConfig, error) {
 }
 
 // validate vérifie la cohérence de la configuration : port valide,
-// au moins une route, préfixes bien formés et uniques, URL cibles conformes.
+// au moins une route, préfixes bien formés et uniques, URL cibles conformes,
+// et présence de auth_service_url dès qu'une route est protégée.
 func (c *GatewayConfig) validate() error {
 	if c.Server.Port < 1 || c.Server.Port > 65535 {
 		return fmt.Errorf("server.port doit être compris entre 1 et 65535, reçu %d", c.Server.Port)
 	}
 	if len(c.Routes) == 0 {
 		return fmt.Errorf("au moins une route doit être définie")
+	}
+
+	if c.AuthServiceURL != "" {
+		if err := validateHTTPURL(c.AuthServiceURL); err != nil {
+			return fmt.Errorf("auth_service_url: %w", err)
+		}
 	}
 
 	seen := make(map[string]bool, len(c.Routes))
@@ -82,16 +95,28 @@ func (c *GatewayConfig) validate() error {
 		}
 		seen[r.PathPrefix] = true
 
-		u, err := url.Parse(r.DestinationURL)
-		if err != nil {
-			return fmt.Errorf("routes[%d].destination_url %q n'est pas une URL valide: %w", i, r.DestinationURL, err)
+		if err := validateHTTPURL(r.DestinationURL); err != nil {
+			return fmt.Errorf("routes[%d].destination_url: %w", i, err)
 		}
-		if u.Scheme != "http" && u.Scheme != "https" {
-			return fmt.Errorf("routes[%d].destination_url %q doit utiliser le schéma http ou https", i, r.DestinationURL)
+
+		if r.RequireAuth && c.AuthServiceURL == "" {
+			return fmt.Errorf("routes[%d] (%s) exige require_auth mais auth_service_url n'est pas défini", i, r.PathPrefix)
 		}
-		if u.Host == "" {
-			return fmt.Errorf("routes[%d].destination_url %q ne contient pas d'hôte", i, r.DestinationURL)
-		}
+	}
+	return nil
+}
+
+// validateHTTPURL vérifie qu'une URL est parsable, en http(s) et avec un hôte.
+func validateHTTPURL(raw string) error {
+	u, err := url.Parse(raw)
+	if err != nil {
+		return fmt.Errorf("%q n'est pas une URL valide: %w", raw, err)
+	}
+	if u.Scheme != "http" && u.Scheme != "https" {
+		return fmt.Errorf("%q doit utiliser le schéma http ou https", raw)
+	}
+	if u.Host == "" {
+		return fmt.Errorf("%q ne contient pas d'hôte", raw)
 	}
 	return nil
 }

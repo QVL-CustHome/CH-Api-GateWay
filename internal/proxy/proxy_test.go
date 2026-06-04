@@ -45,12 +45,13 @@ func newBackend(t *testing.T, status int, respBody string) (*httptest.Server, *c
 	return srv, captured
 }
 
-// newGatewayRouter construit le routeur du gateway avec les routes données.
+// newGatewayRouter construit le routeur du gateway avec les routes données,
+// sans middleware d'authentification.
 func newGatewayRouter(t *testing.T, routes []config.RouteConfig) http.Handler {
 	t.Helper()
 	cfg := &config.GatewayConfig{Routes: routes}
 	cfg.Server.Port = 8080
-	router, err := NewRouter(cfg)
+	router, err := NewRouter(cfg, nil)
 	if err != nil {
 		t.Fatalf("NewRouter() erreur inattendue: %v", err)
 	}
@@ -284,7 +285,88 @@ func TestNewRouterInvalidDestination(t *testing.T) {
 		{PathPrefix: "/api/auth", DestinationURL: "http://invalid%zz"},
 	}}
 	cfg.Server.Port = 8080
-	if _, err := NewRouter(cfg); err == nil {
+	if _, err := NewRouter(cfg, nil); err == nil {
 		t.Fatal("NewRouter() devrait échouer sur une destination invalide")
+	}
+}
+
+// US-05 — le décorateur d'authentification n'est appliqué qu'aux routes
+// require_auth: true ; les routes publiques restent directes.
+func TestRouterAppliesProtectionOnlyToProtectedRoutes(t *testing.T) {
+	publicBackend, publicCaptured := newBackend(t, http.StatusOK, "public")
+	protectedBackend, protectedCaptured := newBackend(t, http.StatusOK, "protected")
+
+	protectCalls := 0
+	protect := func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			protectCalls++
+			if r.Header.Get("Authorization") == "" {
+				http.Error(w, "Unauthorized", http.StatusUnauthorized)
+				return
+			}
+			next.ServeHTTP(w, r)
+		})
+	}
+
+	cfg := &config.GatewayConfig{Routes: []config.RouteConfig{
+		{PathPrefix: "/api/public", DestinationURL: publicBackend.URL},
+		{PathPrefix: "/api/protected", DestinationURL: protectedBackend.URL, RequireAuth: true},
+	}}
+	cfg.Server.Port = 8080
+	router, err := NewRouter(cfg, protect)
+	if err != nil {
+		t.Fatalf("NewRouter() erreur inattendue: %v", err)
+	}
+	gateway := httptest.NewServer(router)
+	t.Cleanup(gateway.Close)
+
+	// Route publique : aucun passage par le middleware d'auth.
+	if _, err := http.Get(gateway.URL + "/api/public/info"); err != nil {
+		t.Fatalf("requête publique: %v", err)
+	}
+	if protectCalls != 0 {
+		t.Errorf("le middleware d'auth ne doit pas intercepter une route publique (appels: %d)", protectCalls)
+	}
+	if publicCaptured.Path != "/api/public/info" {
+		t.Errorf("backend public a reçu %q", publicCaptured.Path)
+	}
+
+	// Route protégée sans token : 401, backend jamais appelé.
+	resp, err := http.Get(gateway.URL + "/api/protected/data")
+	if err != nil {
+		t.Fatalf("requête protégée sans token: %v", err)
+	}
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusUnauthorized {
+		t.Errorf("statut sans token = %d, want 401", resp.StatusCode)
+	}
+	if protectedCaptured.Path != "" {
+		t.Errorf("le backend protégé ne devait pas être appelé, a reçu %q", protectedCaptured.Path)
+	}
+
+	// Route protégée avec token : transférée au backend.
+	req, _ := http.NewRequest(http.MethodGet, gateway.URL+"/api/protected/data", nil)
+	req.Header.Set("Authorization", "Bearer token")
+	resp2, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("requête protégée avec token: %v", err)
+	}
+	resp2.Body.Close()
+	if resp2.StatusCode != http.StatusOK {
+		t.Errorf("statut avec token = %d, want 200", resp2.StatusCode)
+	}
+	if protectedCaptured.Path != "/api/protected/data" {
+		t.Errorf("backend protégé a reçu %q, want /api/protected/data", protectedCaptured.Path)
+	}
+}
+
+// US-05 — route protégée sans middleware fourni : erreur de construction.
+func TestNewRouterProtectedRouteWithoutMiddleware(t *testing.T) {
+	cfg := &config.GatewayConfig{Routes: []config.RouteConfig{
+		{PathPrefix: "/api/protected", DestinationURL: "http://localhost:8083", RequireAuth: true},
+	}}
+	cfg.Server.Port = 8080
+	if _, err := NewRouter(cfg, nil); err == nil {
+		t.Fatal("NewRouter() devrait échouer si une route require_auth n'a pas de middleware")
 	}
 }

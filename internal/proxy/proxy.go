@@ -4,6 +4,7 @@
 package proxy
 
 import (
+	"fmt"
 	"net/http"
 	"net/http/httputil"
 	"net/url"
@@ -62,14 +63,29 @@ func (h *ProxyHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 // path_prefix de la configuration est associé à son reverse proxy, et
 // toute requête sans correspondance reçoit un 404 sans jamais être
 // transmise à un microservice.
-func NewRouter(cfg *config.GatewayConfig) (http.Handler, error) {
+//
+// protect est le décorateur d'authentification (US-05) appliqué uniquement
+// aux routes configurées avec require_auth: true ; il est requis dès qu'une
+// telle route existe.
+func NewRouter(cfg *config.GatewayConfig, protect func(http.Handler) http.Handler) (http.Handler, error) {
 	mux := http.NewServeMux()
 
 	for _, route := range cfg.Routes {
+		var handler http.Handler
 		handler, err := NewProxyHandler(route)
 		if err != nil {
 			return nil, err
 		}
+
+		// US-05 : seules les routes protégées passent par la validation
+		// d'authentification ; les routes publiques restent directes.
+		if route.RequireAuth {
+			if protect == nil {
+				return nil, fmt.Errorf("la route %s exige require_auth mais aucun middleware d'authentification n'est fourni", route.PathPrefix)
+			}
+			handler = protect(handler)
+		}
+
 		// "/api/auth" matche le préfixe exact, "/api/auth/" tout le sous-arbre.
 		mux.Handle(route.PathPrefix, handler)
 		mux.Handle(route.PathPrefix+"/", handler)
