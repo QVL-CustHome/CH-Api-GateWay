@@ -2,6 +2,20 @@
 # Lue une seule fois au démarrage de l'exécutable (US-01).
 server:
   port: 8080
+  cors:
+    allowed_origins:
+      - "http://localhost:3000"
+      - "https://mon-app-front.com"
+    allowed_methods:
+      - "GET"
+      - "POST"
+      - "PUT"
+      - "DELETE"
+      - "OPTIONS"
+    allowed_headers:
+      - "Authorization"
+      - "Content-Type"
+      - "X-Correlation-ID"
 
 routes:
   - path_prefix: "/api/auth"

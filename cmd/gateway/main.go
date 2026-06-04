@@ -8,6 +8,7 @@ import (
 
 	"github.com/custhome/ch-api-gateway/internal/config"
 	"github.com/custhome/ch-api-gateway/internal/health"
+	"github.com/custhome/ch-api-gateway/internal/middleware"
 	"github.com/custhome/ch-api-gateway/internal/proxy"
 )
 
@@ -36,9 +37,13 @@ func main() {
 	mux.HandleFunc("GET /health", health.Handler)
 	mux.Handle("/", router)
 
+	// US-04 : la politique CORS est centralisée dans un middleware global
+	// qui englobe tout le pipeline (preflight intercepté avant le routeur).
+	handler := middleware.CORSMiddleware(cfg.Server.CORS, mux)
+
 	addr := fmt.Sprintf(":%d", cfg.Server.Port)
 	log.Printf("API Gateway listening on %s", addr)
-	if err := http.ListenAndServe(addr, mux); err != nil {
+	if err := http.ListenAndServe(addr, handler); err != nil {
 		log.Fatal(err)
 	}
 }
