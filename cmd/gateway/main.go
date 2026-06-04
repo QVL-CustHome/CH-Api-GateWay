@@ -51,6 +51,14 @@ func main() {
 	// qui englobe tout le pipeline (preflight intercepté avant le routeur).
 	handler := middleware.CORSMiddleware(cfg.Server.CORS, mux)
 
+	// US-08 : le rate limiting par IP est le bouclier le plus externe,
+	// il protège l'ensemble du pipeline (CORS compris).
+	if cfg.Server.RateLimit.Enabled {
+		rl := middleware.NewRateLimiter(cfg.Server.RateLimit.RequestsPerSecond, cfg.Server.RateLimit.Burst)
+		handler = rl.Middleware(handler)
+		log.Printf("rate limiting actif: %.0f req/s, burst %d", cfg.Server.RateLimit.RequestsPerSecond, cfg.Server.RateLimit.Burst)
+	}
+
 	addr := fmt.Sprintf(":%d", cfg.Server.Port)
 	log.Printf("API Gateway listening on %s", addr)
 	if err := http.ListenAndServe(addr, handler); err != nil {

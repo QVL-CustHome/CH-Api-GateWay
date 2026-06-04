@@ -51,6 +51,73 @@ func TestLoadValidFile(t *testing.T) {
 	}
 }
 
+// US-08 — le bloc server.rate_limit est parsé et validé.
+func TestLoadRateLimitConfig(t *testing.T) {
+	yaml := `
+server:
+  port: 8080
+  rate_limit:
+    enabled: true
+    requests_per_second: 10
+    burst: 20
+routes:
+  - path_prefix: "/api/auth"
+    destination_url: "http://localhost:8081"
+`
+	cfg, err := Load(writeTempConfig(t, yaml))
+	if err != nil {
+		t.Fatalf("Load() erreur inattendue: %v", err)
+	}
+	rl := cfg.Server.RateLimit
+	if !rl.Enabled || rl.RequestsPerSecond != 10 || rl.Burst != 20 {
+		t.Errorf("RateLimit = %+v, want enabled/10/20", rl)
+	}
+}
+
+// US-08 — rate_limit activé avec des valeurs invalides : configuration rejetée.
+func TestLoadInvalidRateLimitConfig(t *testing.T) {
+	cases := []struct {
+		name  string
+		block string
+	}{
+		{"rps nul", "enabled: true\n    requests_per_second: 0\n    burst: 20"},
+		{"rps négatif", "enabled: true\n    requests_per_second: -5\n    burst: 20"},
+		{"burst nul", "enabled: true\n    requests_per_second: 10\n    burst: 0"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			yaml := `
+server:
+  port: 8080
+  rate_limit:
+    ` + tc.block + `
+routes:
+  - path_prefix: "/api/auth"
+    destination_url: "http://localhost:8081"
+`
+			if _, err := Load(writeTempConfig(t, yaml)); err == nil {
+				t.Error("Load() devrait rejeter cette configuration de rate limit")
+			}
+		})
+	}
+}
+
+// US-08 — bloc désactivé : les valeurs ne sont pas contrôlées.
+func TestLoadDisabledRateLimitSkipsValidation(t *testing.T) {
+	yaml := `
+server:
+  port: 8080
+  rate_limit:
+    enabled: false
+routes:
+  - path_prefix: "/api/auth"
+    destination_url: "http://localhost:8081"
+`
+	if _, err := Load(writeTempConfig(t, yaml)); err != nil {
+		t.Errorf("Load() erreur inattendue: %v", err)
+	}
+}
+
 // US-05 — auth_service_url et require_auth sont parsés.
 func TestLoadAuthConfig(t *testing.T) {
 	yaml := `
