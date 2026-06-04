@@ -25,6 +25,10 @@ type RouteConfig struct {
 	DestinationURL string `yaml:"destination_url" json:"destination_url"`
 	StripPrefix    bool   `yaml:"strip_prefix" json:"strip_prefix"`
 	RequireAuth    bool   `yaml:"require_auth" json:"require_auth"`
+	// US-09 (sprint Api Authenticator) : portail servi par cette route,
+	// transmis à l'Authenticator via X-Portal pour résoudre le rôle.
+	// Obligatoire dès que require_auth est actif.
+	Portal string `yaml:"portal" json:"portal"`
 }
 
 type CORSConfig struct {
@@ -157,6 +161,10 @@ func (c *GatewayConfig) validate() error {
 
 		if r.RequireAuth && c.AuthServiceURL == "" {
 			return fmt.Errorf("routes[%d] (%s) exige require_auth mais auth_service_url n'est pas défini", i, r.PathPrefix)
+		}
+
+		if r.RequireAuth && strings.TrimSpace(r.Portal) == "" {
+			return fmt.Errorf("routes[%d] (%s) exige require_auth mais ne définit pas de portal : l'Authenticator ne pourrait pas résoudre le rôle (US-09)", i, r.PathPrefix)
 		}
 	}
 	return nil

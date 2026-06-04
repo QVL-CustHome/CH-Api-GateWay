@@ -137,7 +137,7 @@ func TestBuildHandlerRateLimitWithExemptHealth(t *testing.T) {
 }
 
 func TestBuildHandlerProtectedRouteWiresAuth(t *testing.T) {
-	cfg := testConfig(config.RouteConfig{PathPrefix: "/api/protected", DestinationURL: "http://localhost:1", RequireAuth: true})
+	cfg := testConfig(config.RouteConfig{PathPrefix: "/api/protected", DestinationURL: "http://localhost:1", RequireAuth: true, Portal: "portail_test"})
 	cfg.AuthServiceURL = "http://localhost:1/validate"
 
 	handler, _, err := BuildHandler(cfg, testLogger())
@@ -158,7 +158,7 @@ func TestBuildHandlerProtectedRouteWiresAuth(t *testing.T) {
 }
 
 func TestBuildHandlerErrorProtectedRouteWithoutAuthURL(t *testing.T) {
-	cfg := testConfig(config.RouteConfig{PathPrefix: "/api/protected", DestinationURL: "http://localhost:1", RequireAuth: true})
+	cfg := testConfig(config.RouteConfig{PathPrefix: "/api/protected", DestinationURL: "http://localhost:1", RequireAuth: true, Portal: "portail_test"})
 
 	if _, _, err := BuildHandler(cfg, testLogger()); err == nil {
 		t.Fatal("BuildHandler() devrait échouer : route protégée sans auth_service_url")

@@ -12,12 +12,12 @@ import (
 )
 
 func BuildHandler(cfg *config.GatewayConfig, logger *slog.Logger) (http.Handler, []func(), error) {
-	var protect func(http.Handler) http.Handler
+	var protect func(portal string, next http.Handler) http.Handler
 	if cfg.AuthServiceURL != "" {
 		timeout := time.Duration(cfg.AuthServiceTimeoutMs) * time.Millisecond
 		authClient := middleware.NewAuthClient(cfg.AuthServiceURL, timeout)
-		protect = func(next http.Handler) http.Handler {
-			return middleware.AuthMiddleware(authClient, next)
+		protect = func(portal string, next http.Handler) http.Handler {
+			return middleware.AuthMiddleware(authClient, portal, next)
 		}
 	}
 

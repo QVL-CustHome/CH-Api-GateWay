@@ -72,7 +72,7 @@ func TimeoutMiddleware(timeout time.Duration, next http.Handler) http.Handler {
 	})
 }
 
-func NewRouter(cfg *config.GatewayConfig, protect func(http.Handler) http.Handler) (http.Handler, error) {
+func NewRouter(cfg *config.GatewayConfig, protect func(portal string, next http.Handler) http.Handler) (http.Handler, error) {
 	mux := http.NewServeMux()
 
 	timeout := time.Duration(cfg.Server.TimeoutSeconds) * time.Second
@@ -92,7 +92,8 @@ func NewRouter(cfg *config.GatewayConfig, protect func(http.Handler) http.Handle
 			if protect == nil {
 				return nil, fmt.Errorf("la route %s exige require_auth mais aucun middleware d'authentification n'est fourni", route.PathPrefix)
 			}
-			handler = protect(handler)
+			// US-09 : chaque route protégée porte son portail.
+			handler = protect(route.Portal, handler)
 		}
 
 		mux.Handle(route.PathPrefix, handler)

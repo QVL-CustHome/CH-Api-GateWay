@@ -17,6 +17,9 @@ var (
 const (
 	HeaderUserID   = "X-User-Id"
 	HeaderUserRole = "X-User-Role"
+	// US-09 : portail visé par la route, transmis à l'Authenticator
+	// qui résout le rôle de l'utilisateur pour CE portail.
+	HeaderPortal = "X-Portal"
 )
 
 type AuthResponse struct {
@@ -45,7 +48,7 @@ func NewAuthClient(url string, timeout time.Duration) *AuthClient {
 	}
 }
 
-func AuthMiddleware(authClient *AuthClient, next http.Handler) http.Handler {
+func AuthMiddleware(authClient *AuthClient, portal string, next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 
 		r.Header.Del(HeaderUserID)
@@ -63,6 +66,8 @@ func AuthMiddleware(authClient *AuthClient, next http.Handler) http.Handler {
 			return
 		}
 		req.Header.Set("Authorization", "Bearer "+token)
+		// US-09 : l'Authenticator résout roles[X-Portal] → 403 si aucun rôle.
+		req.Header.Set(HeaderPortal, portal)
 		if correlationID := r.Header.Get(CorrelationHeader); correlationID != "" {
 			req.Header.Set(CorrelationHeader, correlationID)
 		}

@@ -10,6 +10,9 @@ import (
 
 const validAuthJSON = `{"user_id":"123e4567-e89b-12d3-a456-426614174000","role":"admin"}`
 
+// Portail utilisé par défaut dans les tests du middleware (US-09).
+const testPortal = "portail_test"
+
 func TestExtractBearerToken(t *testing.T) {
 	cases := []struct {
 		name      string
@@ -47,17 +50,23 @@ func TestExtractBearerToken(t *testing.T) {
 }
 
 func authBackend(t *testing.T, status int, body string) (*httptest.Server, *string) {
+	srv, receivedAuth, _ := authBackendWithPortal(t, status, body)
+	return srv, receivedAuth
+}
+
+func authBackendWithPortal(t *testing.T, status int, body string) (*httptest.Server, *string, *string) {
 	t.Helper()
-	var receivedAuth string
+	var receivedAuth, receivedPortal string
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		receivedAuth = r.Header.Get("Authorization")
+		receivedPortal = r.Header.Get(HeaderPortal)
 		w.WriteHeader(status)
 		if body != "" {
 			w.Write([]byte(body))
 		}
 	}))
 	t.Cleanup(srv.Close)
-	return srv, &receivedAuth
+	return srv, &receivedAuth, &receivedPortal
 }
 
 func serveAuth(t *testing.T, authURL, authorization string, extraHeaders map[string]string) (*httptest.ResponseRecorder, bool, http.Header) {
@@ -78,8 +87,37 @@ func serveAuth(t *testing.T, authURL, authorization string, extraHeaders map[str
 		req.Header.Set(k, v)
 	}
 	rec := httptest.NewRecorder()
-	AuthMiddleware(NewAuthClient(authURL, 100*time.Millisecond), next).ServeHTTP(rec, req)
+	AuthMiddleware(NewAuthClient(authURL, 100*time.Millisecond), testPortal, next).ServeHTTP(rec, req)
 	return rec, nextCalled, nextHeaders
+}
+
+// US-09 : le portail de la route est transmis au service d'auth via X-Portal.
+func TestAuthSendsPortalHeader(t *testing.T) {
+	auth, _, receivedPortal := authBackendWithPortal(t, http.StatusOK, validAuthJSON)
+
+	_, nextCalled, _ := serveAuth(t, auth.URL, "Bearer token-valide", nil)
+
+	if !nextCalled {
+		t.Fatal("la requête authentifiée doit être transférée au backend")
+	}
+	if *receivedPortal != testPortal {
+		t.Errorf("X-Portal reçu par le service d'auth = %q, want %q", *receivedPortal, testPortal)
+	}
+}
+
+// US-09 : un X-Portal forgé par le client ne doit jamais remplacer celui de la route.
+func TestSpoofedPortalHeaderIsIgnored(t *testing.T) {
+	auth, _, receivedPortal := authBackendWithPortal(t, http.StatusOK, validAuthJSON)
+	forged := map[string]string{HeaderPortal: "portail-forge"}
+
+	_, nextCalled, _ := serveAuth(t, auth.URL, "Bearer token-valide", forged)
+
+	if !nextCalled {
+		t.Fatal("la requête authentifiée doit être transférée au backend")
+	}
+	if *receivedPortal != testPortal {
+		t.Errorf("X-Portal reçu = %q : le portail forgé par le client a fuité (want %q)", *receivedPortal, testPortal)
+	}
 }
 
 func TestAuthValidToken(t *testing.T) {
