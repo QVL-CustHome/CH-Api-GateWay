@@ -37,6 +37,9 @@ server:
 auth_service_url: "http://localhost:8081/validate"
 # US-15 : délai d'attente maximum du service d'authentification (millisecondes).
 auth_service_timeout_ms: 100
+# US-11 (sprint Api Authenticator) : cookie HttpOnly posé au login par
+# l'Authenticator, lu en complément du header Authorization (qui prime).
+auth_cookie_name: "ch_token"
 
 routes:
   - path_prefix: "/api/auth"

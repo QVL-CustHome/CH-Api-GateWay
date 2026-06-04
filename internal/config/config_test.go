@@ -328,6 +328,33 @@ routes:
 	}
 }
 
+// US-11 : nom du cookie porteur du token — défaut ch_token, surchargeable.
+func TestLoadAuthCookieName(t *testing.T) {
+	base := `
+server:
+  port: 8080
+routes:
+  - path_prefix: "/api/auth"
+    destination_url: "http://localhost:8081"
+`
+	cfg, err := Load(writeTempConfig(t, base))
+	if err != nil {
+		t.Fatalf("Load() erreur inattendue: %v", err)
+	}
+	if cfg.AuthCookieName != DefaultAuthCookieName {
+		t.Errorf("AuthCookieName = %q, want défaut %q", cfg.AuthCookieName, DefaultAuthCookieName)
+	}
+
+	custom := base + "auth_cookie_name: \"mon_cookie\"\n"
+	cfg, err = Load(writeTempConfig(t, custom))
+	if err != nil {
+		t.Fatalf("Load() erreur inattendue: %v", err)
+	}
+	if cfg.AuthCookieName != "mon_cookie" {
+		t.Errorf("AuthCookieName = %q, want mon_cookie", cfg.AuthCookieName)
+	}
+}
+
 // US-09 : une route protégée sans portail est une erreur de configuration.
 func TestLoadRequireAuthWithoutPortal(t *testing.T) {
 	yaml := `

@@ -13,6 +13,9 @@ const validAuthJSON = `{"user_id":"123e4567-e89b-12d3-a456-426614174000","role":
 // Portail utilisé par défaut dans les tests du middleware (US-09).
 const testPortal = "portail_test"
 
+// Cookie porteur du token dans les tests (US-11).
+const testCookieName = "ch_token"
+
 func TestExtractBearerToken(t *testing.T) {
 	cases := []struct {
 		name      string
@@ -87,8 +90,68 @@ func serveAuth(t *testing.T, authURL, authorization string, extraHeaders map[str
 		req.Header.Set(k, v)
 	}
 	rec := httptest.NewRecorder()
-	AuthMiddleware(NewAuthClient(authURL, 100*time.Millisecond), testPortal, next).ServeHTTP(rec, req)
+	AuthMiddleware(NewAuthClient(authURL, 100*time.Millisecond, testCookieName), testPortal, next).ServeHTTP(rec, req)
 	return rec, nextCalled, nextHeaders
+}
+
+// US-11 : matrice cookie/header — le header prime, le cookie est le fallback.
+func TestAuthTokenFromCookieOrHeader(t *testing.T) {
+	cases := []struct {
+		name          string
+		authorization string
+		cookie        string
+		wantStatus    int
+		wantAuthSent  string // Authorization attendu côté service d'auth
+	}{
+		{"cookie seul", "", "token-cookie", http.StatusOK, "Bearer token-cookie"},
+		{"header seul", "Bearer token-header", "", http.StatusOK, "Bearer token-header"},
+		{"les deux : le header prime", "Bearer token-header", "token-cookie", http.StatusOK, "Bearer token-header"},
+		{"aucun des deux", "", "", http.StatusUnauthorized, ""},
+		{"cookie vide", "", "   ", http.StatusUnauthorized, ""},
+		{"header malformé : pas de repli sur le cookie", "Basic abc", "token-cookie", http.StatusUnauthorized, ""},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			auth, receivedAuth := authBackend(t, http.StatusOK, validAuthJSON)
+
+			next := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusOK) })
+			req := httptest.NewRequest(http.MethodGet, "/api/protected/data", nil)
+			if tc.authorization != "" {
+				req.Header.Set("Authorization", tc.authorization)
+			}
+			if tc.cookie != "" {
+				req.AddCookie(&http.Cookie{Name: testCookieName, Value: tc.cookie})
+			}
+			rec := httptest.NewRecorder()
+			AuthMiddleware(NewAuthClient(auth.URL, 100*time.Millisecond, testCookieName), testPortal, next).ServeHTTP(rec, req)
+
+			if rec.Code != tc.wantStatus {
+				t.Errorf("statut = %d, want %d", rec.Code, tc.wantStatus)
+			}
+			if *receivedAuth != tc.wantAuthSent {
+				t.Errorf("Authorization envoyé au service d'auth = %q, want %q", *receivedAuth, tc.wantAuthSent)
+			}
+		})
+	}
+}
+
+// US-11 : un autre cookie que celui configuré ne donne jamais accès.
+func TestAuthIgnoresOtherCookies(t *testing.T) {
+	auth, receivedAuth := authBackend(t, http.StatusOK, validAuthJSON)
+
+	next := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusOK) })
+	req := httptest.NewRequest(http.MethodGet, "/api/protected/data", nil)
+	req.AddCookie(&http.Cookie{Name: "session_marketing", Value: "token-pirate"})
+	rec := httptest.NewRecorder()
+	AuthMiddleware(NewAuthClient(auth.URL, 100*time.Millisecond, testCookieName), testPortal, next).ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusUnauthorized {
+		t.Errorf("statut = %d, want 401", rec.Code)
+	}
+	if *receivedAuth != "" {
+		t.Errorf("le service d'auth a été appelé avec %q, want aucun appel", *receivedAuth)
+	}
 }
 
 // US-09 : le portail de la route est transmis au service d'auth via X-Portal.
@@ -121,7 +184,7 @@ func TestAuthSendsClientIP(t *testing.T) {
 		t.Fatalf("NewIPExtractor: %v", err)
 	}
 	handler := extractor.Middleware(
-		AuthMiddleware(NewAuthClient(auth.URL, 100*time.Millisecond), testPortal, next),
+		AuthMiddleware(NewAuthClient(auth.URL, 100*time.Millisecond, testCookieName), testPortal, next),
 	)
 
 	req := httptest.NewRequest(http.MethodGet, "/api/protected/data", nil)
