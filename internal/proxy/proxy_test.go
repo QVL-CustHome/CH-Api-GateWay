@@ -197,8 +197,84 @@ func TestRouterDispatchesToCorrectBackend(t *testing.T) {
 	}
 }
 
+// US-03 Scénario 1 — strip_prefix: true : le préfixe est supprimé avant transfert,
+// le reste de la requête (query, body, headers) est inchangé.
+func TestStripPrefixEnabled(t *testing.T) {
+	backend, captured := newBackend(t, http.StatusOK, "ok")
+	router := newGatewayRouter(t, []config.RouteConfig{
+		{PathPrefix: "/api/users", DestinationURL: backend.URL, StripPrefix: true},
+	})
+	gateway := httptest.NewServer(router)
+	t.Cleanup(gateway.Close)
+
+	resp, err := http.Post(
+		gateway.URL+"/api/users/profile?fields=name",
+		"application/json",
+		strings.NewReader(`{"id":42}`),
+	)
+	if err != nil {
+		t.Fatalf("requête vers le gateway: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if captured.Path != "/profile" {
+		t.Errorf("path reçu par le backend = %q, want /profile", captured.Path)
+	}
+	if captured.Query != "fields=name" {
+		t.Errorf("query reçue par le backend = %q, want fields=name", captured.Query)
+	}
+	if captured.Body != `{"id":42}` {
+		t.Errorf("body reçu par le backend = %q", captured.Body)
+	}
+	if ct := captured.Header.Get("Content-Type"); ct != "application/json" {
+		t.Errorf("Content-Type reçu par le backend = %q, want application/json", ct)
+	}
+}
+
+// US-03 Scénario 2 — strip_prefix sur la racine exacte : "" devient "/".
+func TestStripPrefixOnExactRootBecomesSlash(t *testing.T) {
+	backend, captured := newBackend(t, http.StatusOK, "ok")
+	router := newGatewayRouter(t, []config.RouteConfig{
+		{PathPrefix: "/api/users", DestinationURL: backend.URL, StripPrefix: true},
+	})
+	gateway := httptest.NewServer(router)
+	t.Cleanup(gateway.Close)
+
+	resp, err := http.Get(gateway.URL + "/api/users")
+	if err != nil {
+		t.Fatalf("requête vers le gateway: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if captured.Path != "/" {
+		t.Errorf("path reçu par le backend = %q, want /", captured.Path)
+	}
+}
+
+// US-03 Scénario 3 — strip_prefix absent ou false (valeur zéro Go) :
+// path transmis tel quel.
+func TestStripPrefixDisabledKeepsFullPath(t *testing.T) {
+	backend, captured := newBackend(t, http.StatusOK, "ok")
+	router := newGatewayRouter(t, []config.RouteConfig{
+		{PathPrefix: "/api/auth", DestinationURL: backend.URL},
+	})
+	gateway := httptest.NewServer(router)
+	t.Cleanup(gateway.Close)
+
+	resp, err := http.Get(gateway.URL + "/api/auth/login")
+	if err != nil {
+		t.Fatalf("requête vers le gateway: %v", err)
+	}
+	resp.Body.Close()
+
+	if captured.Path != "/api/auth/login" {
+		t.Errorf("path reçu par le backend = %q, want /api/auth/login", captured.Path)
+	}
+}
+
 func TestNewProxyHandlerInvalidURL(t *testing.T) {
-	if _, err := NewProxyHandler("http://invalid%zz"); err == nil {
+	route := config.RouteConfig{PathPrefix: "/api/auth", DestinationURL: "http://invalid%zz"}
+	if _, err := NewProxyHandler(route); err == nil {
 		t.Fatal("NewProxyHandler() devrait échouer sur une URL incohérente")
 	}
 }

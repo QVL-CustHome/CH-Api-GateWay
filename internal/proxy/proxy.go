@@ -1,11 +1,13 @@
 // Package proxy implémente la redirection dynamique par path vers les
-// microservices cibles via un Reverse Proxy (US-02 / SCRUM-6).
+// microservices cibles via un Reverse Proxy (US-02 / SCRUM-6), avec
+// réécriture optionnelle du préfixe de routage (US-03 / SCRUM-7).
 package proxy
 
 import (
 	"net/http"
 	"net/http/httputil"
 	"net/url"
+	"strings"
 
 	"github.com/custhome/ch-api-gateway/internal/config"
 )
@@ -15,25 +17,42 @@ import (
 type ProxyHandler struct {
 	TargetURL    *url.URL
 	ReverseProxy *httputil.ReverseProxy
+	Prefix       string
+	StripPrefix  bool
 }
 
-// NewProxyHandler construit un handler de reverse proxy vers l'URL cible donnée.
-func NewProxyHandler(target string) (*ProxyHandler, error) {
-	parsedURL, err := url.Parse(target)
+// NewProxyHandler construit un handler de reverse proxy pour la route donnée.
+// Si StripPrefix est actif, le préfixe de routage est supprimé de l'URL à la
+// volée (via le Director) avant transfert au backend ; un chemin vide après
+// suppression est remplacé par "/".
+func NewProxyHandler(route config.RouteConfig) (*ProxyHandler, error) {
+	parsedURL, err := url.Parse(route.DestinationURL)
 	if err != nil {
 		return nil, err
 	}
 
 	proxy := httputil.NewSingleHostReverseProxy(parsedURL)
 
+	originalDirector := proxy.Director
+	proxy.Director = func(req *http.Request) {
+		originalDirector(req)
+		if route.StripPrefix {
+			req.URL.Path = strings.TrimPrefix(req.URL.Path, route.PathPrefix)
+			if req.URL.Path == "" {
+				req.URL.Path = "/"
+			}
+		}
+	}
+
 	return &ProxyHandler{
 		TargetURL:    parsedURL,
 		ReverseProxy: proxy,
+		Prefix:       route.PathPrefix,
+		StripPrefix:  route.StripPrefix,
 	}, nil
 }
 
-// ServeHTTP transfère la requête au backend cible. Le path est transmis
-// tel quel (le rewriting du préfixe est l'objet de l'US-03).
+// ServeHTTP transfère la requête au backend cible.
 func (h *ProxyHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	r.Host = h.TargetURL.Host
 	h.ReverseProxy.ServeHTTP(w, r)
@@ -47,7 +66,7 @@ func NewRouter(cfg *config.GatewayConfig) (http.Handler, error) {
 	mux := http.NewServeMux()
 
 	for _, route := range cfg.Routes {
-		handler, err := NewProxyHandler(route.DestinationURL)
+		handler, err := NewProxyHandler(route)
 		if err != nil {
 			return nil, err
 		}
