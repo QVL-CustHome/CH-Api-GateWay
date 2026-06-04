@@ -236,6 +236,51 @@ routes:
 	}
 }
 
+func TestLoadTrustedProxies(t *testing.T) {
+	yaml := `
+server:
+  port: 8080
+  rate_limit:
+    enabled: true
+    requests_per_second: 10
+    burst: 20
+    trusted_proxies:
+      - "10.0.0.1"
+      - "10.1.0.0/16"
+      - "2001:db8::1"
+routes:
+  - path_prefix: "/api/auth"
+    destination_url: "http://localhost:8081"
+`
+	cfg, err := Load(writeTempConfig(t, yaml))
+	if err != nil {
+		t.Fatalf("Load() erreur inattendue: %v", err)
+	}
+	if got := len(cfg.Server.RateLimit.TrustedProxies); got != 3 {
+		t.Errorf("TrustedProxies = %d entrées, want 3", got)
+	}
+}
+
+func TestLoadInvalidTrustedProxies(t *testing.T) {
+	for _, entry := range []string{"pas-une-ip", "10.0.0.0/99"} {
+		t.Run(entry, func(t *testing.T) {
+			yaml := `
+server:
+  port: 8080
+  rate_limit:
+    trusted_proxies:
+      - "` + entry + `"
+routes:
+  - path_prefix: "/api/auth"
+    destination_url: "http://localhost:8081"
+`
+			if _, err := Load(writeTempConfig(t, yaml)); err == nil {
+				t.Errorf("Load() devrait rejeter trusted_proxies %q", entry)
+			}
+		})
+	}
+}
+
 func TestLoadDisabledRateLimitSkipsValidation(t *testing.T) {
 	yaml := `
 server:

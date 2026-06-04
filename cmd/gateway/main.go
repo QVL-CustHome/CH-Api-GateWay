@@ -66,18 +66,25 @@ func main() {
 
 	handler = middleware.MaxBodyBytesMiddleware(cfg.Server.MaxBodyBytes, handler)
 
+	extractor, err := middleware.NewIPExtractor(cfg.Server.RateLimit.TrustedProxies)
+	if err != nil {
+		logger.Error("démarrage impossible", slog.String("error", err.Error()))
+		os.Exit(1)
+	}
+
 	onShutdown := []func(){}
 	if cfg.Server.RateLimit.Enabled {
-		rl := middleware.NewRateLimiter(cfg.Server.RateLimit.RequestsPerSecond, cfg.Server.RateLimit.Burst)
+		rl := middleware.NewRateLimiter(cfg.Server.RateLimit.RequestsPerSecond, cfg.Server.RateLimit.Burst, extractor, "/health")
 		handler = rl.Middleware(handler)
 		onShutdown = append(onShutdown, rl.Stop)
 		logger.Info("rate limiting actif",
 			slog.Float64("requests_per_second", cfg.Server.RateLimit.RequestsPerSecond),
 			slog.Int("burst", cfg.Server.RateLimit.Burst),
+			slog.Int("trusted_proxies", len(cfg.Server.RateLimit.TrustedProxies)),
 		)
 	}
 
-	handler = middleware.LoggingMiddleware(logger, handler)
+	handler = middleware.LoggingMiddleware(logger, extractor, handler)
 
 	handler = middleware.CorrelationIDMiddleware(handler)
 

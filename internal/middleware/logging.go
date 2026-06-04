@@ -23,7 +23,7 @@ func (r *responseRecorder) Write(b []byte) (int, error) {
 	return size, err
 }
 
-func LoggingMiddleware(logger *slog.Logger, next http.Handler) http.Handler {
+func LoggingMiddleware(logger *slog.Logger, extractor *IPExtractor, next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		start := time.Now()
 
@@ -40,7 +40,7 @@ func LoggingMiddleware(logger *slog.Logger, next http.Handler) http.Handler {
 			slog.Int("status", rec.status),
 			slog.Duration("duration", time.Since(start)),
 			slog.Int("bytes", rec.size),
-			slog.String("ip", extractIP(r)),
+			slog.String("ip", extractor.ClientIP(r)),
 			slog.String("correlation_id", CorrelationIDFromContext(r.Context())),
 		)
 	})
