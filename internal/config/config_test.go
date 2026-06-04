@@ -352,6 +352,82 @@ routes:
 	}
 }
 
+func TestLoadAuthServiceTimeout(t *testing.T) {
+	yaml := `
+server:
+  port: 8080
+auth_service_timeout_ms: 250
+routes:
+  - path_prefix: "/api/auth"
+    destination_url: "http://localhost:8081"
+`
+	cfg, err := Load(writeTempConfig(t, yaml))
+	if err != nil {
+		t.Fatalf("Load() erreur inattendue: %v", err)
+	}
+	if cfg.AuthServiceTimeoutMs != 250 {
+		t.Errorf("AuthServiceTimeoutMs = %d, want 250", cfg.AuthServiceTimeoutMs)
+	}
+}
+
+func TestLoadAuthServiceTimeoutDefault(t *testing.T) {
+	cfg, err := Load(writeTempConfig(t, validYAML))
+	if err != nil {
+		t.Fatalf("Load() erreur inattendue: %v", err)
+	}
+	if cfg.AuthServiceTimeoutMs != DefaultAuthServiceTimeoutMs {
+		t.Errorf("AuthServiceTimeoutMs = %d, want défaut %d", cfg.AuthServiceTimeoutMs, DefaultAuthServiceTimeoutMs)
+	}
+}
+
+func TestLoadNegativeAuthServiceTimeout(t *testing.T) {
+	yaml := `
+server:
+  port: 8080
+auth_service_timeout_ms: -5
+routes:
+  - path_prefix: "/api/auth"
+    destination_url: "http://localhost:8081"
+`
+	if _, err := Load(writeTempConfig(t, yaml)); err == nil {
+		t.Fatal("Load() devrait rejeter un auth_service_timeout_ms négatif")
+	}
+}
+
+func TestLoadCORSMaxAge(t *testing.T) {
+	yaml := `
+server:
+  port: 8080
+  cors:
+    max_age_seconds: 600
+routes:
+  - path_prefix: "/api/auth"
+    destination_url: "http://localhost:8081"
+`
+	cfg, err := Load(writeTempConfig(t, yaml))
+	if err != nil {
+		t.Fatalf("Load() erreur inattendue: %v", err)
+	}
+	if cfg.Server.CORS.MaxAgeSeconds != 600 {
+		t.Errorf("MaxAgeSeconds = %d, want 600", cfg.Server.CORS.MaxAgeSeconds)
+	}
+}
+
+func TestLoadNegativeCORSMaxAge(t *testing.T) {
+	yaml := `
+server:
+  port: 8080
+  cors:
+    max_age_seconds: -1
+routes:
+  - path_prefix: "/api/auth"
+    destination_url: "http://localhost:8081"
+`
+	if _, err := Load(writeTempConfig(t, yaml)); err == nil {
+		t.Fatal("Load() devrait rejeter un max_age_seconds négatif")
+	}
+}
+
 func TestLoadCORSConfig(t *testing.T) {
 	yaml := `
 server:

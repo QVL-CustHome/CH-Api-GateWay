@@ -18,6 +18,8 @@ const DefaultLogLevel = "INFO"
 
 const DefaultMaxBodyBytes = 10 << 20
 
+const DefaultAuthServiceTimeoutMs = 100
+
 type RouteConfig struct {
 	PathPrefix     string `yaml:"path_prefix" json:"path_prefix"`
 	DestinationURL string `yaml:"destination_url" json:"destination_url"`
@@ -29,6 +31,7 @@ type CORSConfig struct {
 	AllowedOrigins []string `yaml:"allowed_origins" json:"allowed_origins"`
 	AllowedMethods []string `yaml:"allowed_methods" json:"allowed_methods"`
 	AllowedHeaders []string `yaml:"allowed_headers" json:"allowed_headers"`
+	MaxAgeSeconds  int      `yaml:"max_age_seconds" json:"max_age_seconds"`
 }
 
 type RateLimitConfig struct {
@@ -50,8 +53,9 @@ type GatewayConfig struct {
 		CORS      CORSConfig      `yaml:"cors" json:"cors"`
 		RateLimit RateLimitConfig `yaml:"rate_limit" json:"rate_limit"`
 	} `yaml:"server" json:"server"`
-	AuthServiceURL string        `yaml:"auth_service_url" json:"auth_service_url"`
-	Routes         []RouteConfig `yaml:"routes" json:"routes"`
+	AuthServiceURL       string        `yaml:"auth_service_url" json:"auth_service_url"`
+	AuthServiceTimeoutMs int           `yaml:"auth_service_timeout_ms" json:"auth_service_timeout_ms"`
+	Routes               []RouteConfig `yaml:"routes" json:"routes"`
 }
 
 func Load(path string) (*GatewayConfig, error) {
@@ -75,6 +79,10 @@ func Load(path string) (*GatewayConfig, error) {
 		cfg.Server.MaxBodyBytes = DefaultMaxBodyBytes
 	}
 
+	if cfg.AuthServiceTimeoutMs == 0 {
+		cfg.AuthServiceTimeoutMs = DefaultAuthServiceTimeoutMs
+	}
+
 	if cfg.Server.LogLevel == "" {
 		cfg.Server.LogLevel = DefaultLogLevel
 	}
@@ -95,6 +103,12 @@ func (c *GatewayConfig) validate() error {
 	}
 	if c.Server.MaxBodyBytes < 1 {
 		return fmt.Errorf("server.max_body_bytes doit être >= 1, reçu %d", c.Server.MaxBodyBytes)
+	}
+	if c.AuthServiceTimeoutMs < 1 {
+		return fmt.Errorf("auth_service_timeout_ms doit être >= 1, reçu %d", c.AuthServiceTimeoutMs)
+	}
+	if c.Server.CORS.MaxAgeSeconds < 0 {
+		return fmt.Errorf("server.cors.max_age_seconds doit être >= 0, reçu %d", c.Server.CORS.MaxAgeSeconds)
 	}
 	switch c.Server.LogLevel {
 	case "DEBUG", "INFO", "WARN", "ERROR":

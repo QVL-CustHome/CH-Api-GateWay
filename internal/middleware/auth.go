@@ -3,6 +3,7 @@ package middleware
 import (
 	"encoding/json"
 	"errors"
+	"io"
 	"net/http"
 	"strings"
 	"time"
@@ -23,19 +24,18 @@ type AuthResponse struct {
 	Role   string `json:"role"`
 }
 
-const authTimeout = 100 * time.Millisecond
+const maxAuthResponseBytes = 64 << 10
 
 type AuthClient struct {
 	client  *http.Client
 	authURL string
 }
 
-func NewAuthClient(url string) *AuthClient {
+func NewAuthClient(url string, timeout time.Duration) *AuthClient {
 	return &AuthClient{
 		client: &http.Client{
-			Timeout: authTimeout,
+			Timeout: timeout,
 			Transport: &http.Transport{
-
 				MaxIdleConns:        100,
 				MaxIdleConnsPerHost: 100,
 				IdleConnTimeout:     90 * time.Second,
@@ -79,7 +79,7 @@ func AuthMiddleware(authClient *AuthClient, next http.Handler) http.Handler {
 		case http.StatusOK:
 
 			var authData AuthResponse
-			if err := json.NewDecoder(resp.Body).Decode(&authData); err != nil || authData.UserID == "" {
+			if err := json.NewDecoder(io.LimitReader(resp.Body, maxAuthResponseBytes)).Decode(&authData); err != nil || authData.UserID == "" {
 
 				http.Error(w, "Internal Server Error", http.StatusInternalServerError)
 				return

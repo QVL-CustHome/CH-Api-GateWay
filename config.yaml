@@ -30,9 +30,13 @@ server:
       - "Authorization"
       - "Content-Type"
       - "X-Correlation-ID"
+    # US-15 : durée de cache du preflight par les navigateurs (secondes).
+    max_age_seconds: 600
 
 # US-05 : endpoint de validation du microservice d'authentification (Rust).
 auth_service_url: "http://localhost:8081/validate"
+# US-15 : délai d'attente maximum du service d'authentification (millisecondes).
+auth_service_timeout_ms: 100
 
 routes:
   - path_prefix: "/api/auth"

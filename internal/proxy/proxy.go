@@ -16,8 +16,6 @@ import (
 type ProxyHandler struct {
 	TargetURL    *url.URL
 	ReverseProxy *httputil.ReverseProxy
-	Prefix       string
-	StripPrefix  bool
 }
 
 func NewProxyHandler(route config.RouteConfig) (*ProxyHandler, error) {
@@ -26,30 +24,28 @@ func NewProxyHandler(route config.RouteConfig) (*ProxyHandler, error) {
 		return nil, err
 	}
 
-	proxy := httputil.NewSingleHostReverseProxy(parsedURL)
-	configureProxyErrorHandler(proxy)
-
-	originalDirector := proxy.Director
-	proxy.Director = func(req *http.Request) {
-		originalDirector(req)
-		if route.StripPrefix {
-			req.URL.Path = strings.TrimPrefix(req.URL.Path, route.PathPrefix)
-			if req.URL.Path == "" {
-				req.URL.Path = "/"
+	proxy := &httputil.ReverseProxy{
+		Rewrite: func(pr *httputil.ProxyRequest) {
+			pr.SetURL(parsedURL)
+			pr.SetXForwarded()
+			if route.StripPrefix {
+				pr.Out.URL.Path = strings.TrimPrefix(pr.Out.URL.Path, route.PathPrefix)
+				if pr.Out.URL.Path == "" {
+					pr.Out.URL.Path = "/"
+				}
+				pr.Out.URL.RawPath = ""
 			}
-		}
+		},
 	}
+	configureProxyErrorHandler(proxy)
 
 	return &ProxyHandler{
 		TargetURL:    parsedURL,
 		ReverseProxy: proxy,
-		Prefix:       route.PathPrefix,
-		StripPrefix:  route.StripPrefix,
 	}, nil
 }
 
 func (h *ProxyHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	r.Host = h.TargetURL.Host
 	h.ReverseProxy.ServeHTTP(w, r)
 }
 

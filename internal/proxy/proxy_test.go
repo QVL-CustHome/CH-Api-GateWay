@@ -378,6 +378,34 @@ func TestRouterAppliesConfiguredTimeout(t *testing.T) {
 	}
 }
 
+func TestProxySetsXForwardedHeaders(t *testing.T) {
+	backend, captured := newBackend(t, http.StatusOK, "ok")
+	router := newGatewayRouter(t, []config.RouteConfig{
+		{PathPrefix: "/api/users", DestinationURL: backend.URL},
+	})
+	gateway := httptest.NewServer(router)
+	t.Cleanup(gateway.Close)
+
+	req, _ := http.NewRequest(http.MethodGet, gateway.URL+"/api/users", nil)
+	req.Header.Set("X-Forwarded-For", "1.2.3.4")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("requête: %v", err)
+	}
+	resp.Body.Close()
+
+	if got := captured.Header.Get("X-Forwarded-For"); got != "127.0.0.1" {
+		t.Errorf("X-Forwarded-For = %q, want 127.0.0.1 (le XFF entrant forgé est remplacé)", got)
+	}
+	if got := captured.Header.Get("X-Forwarded-Proto"); got != "http" {
+		t.Errorf("X-Forwarded-Proto = %q, want http", got)
+	}
+	wantHost := strings.TrimPrefix(gateway.URL, "http://")
+	if got := captured.Header.Get("X-Forwarded-Host"); got != wantHost {
+		t.Errorf("X-Forwarded-Host = %q, want %q", got, wantHost)
+	}
+}
+
 func TestPublicRouteStripsForgedUserHeaders(t *testing.T) {
 	backend, captured := newBackend(t, http.StatusOK, "ok")
 	router := newGatewayRouter(t, []config.RouteConfig{

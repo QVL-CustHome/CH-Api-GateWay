@@ -78,7 +78,7 @@ func serveAuth(t *testing.T, authURL, authorization string, extraHeaders map[str
 		req.Header.Set(k, v)
 	}
 	rec := httptest.NewRecorder()
-	AuthMiddleware(NewAuthClient(authURL), next).ServeHTTP(rec, req)
+	AuthMiddleware(NewAuthClient(authURL, 100*time.Millisecond), next).ServeHTTP(rec, req)
 	return rec, nextCalled, nextHeaders
 }
 
@@ -166,7 +166,7 @@ func TestAuthServiceUnreachable(t *testing.T) {
 
 func TestAuthServiceTimeout(t *testing.T) {
 	auth := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		time.Sleep(authTimeout + 200*time.Millisecond)
+		time.Sleep(300 * time.Millisecond)
 		w.WriteHeader(http.StatusOK)
 	}))
 	t.Cleanup(auth.Close)

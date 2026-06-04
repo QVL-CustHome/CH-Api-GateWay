@@ -2,6 +2,7 @@ package middleware
 
 import (
 	"net/http"
+	"strconv"
 	"strings"
 
 	"github.com/custhome/ch-api-gateway/internal/config"
@@ -10,6 +11,7 @@ import (
 func CORSMiddleware(cfg config.CORSConfig, next http.Handler) http.Handler {
 	methodsStr := strings.Join(cfg.AllowedMethods, ", ")
 	headersStr := strings.Join(cfg.AllowedHeaders, ", ")
+	maxAgeStr := strconv.Itoa(cfg.MaxAgeSeconds)
 
 	allowedOrigins := make(map[string]bool, len(cfg.AllowedOrigins))
 	for _, o := range cfg.AllowedOrigins {
@@ -26,7 +28,7 @@ func CORSMiddleware(cfg config.CORSConfig, next http.Handler) http.Handler {
 			w.Header().Set("Access-Control-Allow-Origin", origin)
 		}
 
-		w.Header().Add("Vary", "Origin")
+		w.Header().Set("Vary", "Origin")
 
 		if methodsStr != "" {
 			w.Header().Set("Access-Control-Allow-Methods", methodsStr)
@@ -36,6 +38,9 @@ func CORSMiddleware(cfg config.CORSConfig, next http.Handler) http.Handler {
 		}
 
 		if r.Method == http.MethodOptions {
+			if cfg.MaxAgeSeconds > 0 {
+				w.Header().Set("Access-Control-Max-Age", maxAgeStr)
+			}
 			w.WriteHeader(http.StatusNoContent)
 			return
 		}
