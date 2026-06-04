@@ -105,6 +105,59 @@ func TestAuthSendsPortalHeader(t *testing.T) {
 	}
 }
 
+// US-10 : l'IP client résolue (contexte IPExtractor) est transmise au /validate.
+func TestAuthSendsClientIP(t *testing.T) {
+	var receivedClientIP string
+	auth := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		receivedClientIP = r.Header.Get(HeaderClientIP)
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte(validAuthJSON))
+	}))
+	t.Cleanup(auth.Close)
+
+	next := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusOK) })
+	extractor, err := NewIPExtractor(nil)
+	if err != nil {
+		t.Fatalf("NewIPExtractor: %v", err)
+	}
+	handler := extractor.Middleware(
+		AuthMiddleware(NewAuthClient(auth.URL, 100*time.Millisecond), testPortal, next),
+	)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/protected/data", nil)
+	req.Header.Set("Authorization", "Bearer token-valide")
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("statut = %d, want 200", rec.Code)
+	}
+	// httptest.NewRequest fixe RemoteAddr à 192.0.2.1:1234.
+	if receivedClientIP != "192.0.2.1" {
+		t.Errorf("X-Client-IP reçu par le service d'auth = %q, want 192.0.2.1", receivedClientIP)
+	}
+}
+
+// US-10 : sans IP résolue en contexte, aucun X-Client-IP n'est envoyé au /validate.
+func TestAuthOmitsClientIPWithoutContext(t *testing.T) {
+	clientIPSent := false
+	auth := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, clientIPSent = r.Header[http.CanonicalHeaderKey(HeaderClientIP)]
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte(validAuthJSON))
+	}))
+	t.Cleanup(auth.Close)
+
+	_, nextCalled, _ := serveAuth(t, auth.URL, "Bearer token-valide", nil)
+
+	if !nextCalled {
+		t.Fatal("la requête authentifiée doit être transférée au backend")
+	}
+	if clientIPSent {
+		t.Error("X-Client-IP ne doit pas être envoyé sans IP résolue en contexte")
+	}
+}
+
 // US-09 : un X-Portal forgé par le client ne doit jamais remplacer celui de la route.
 func TestSpoofedPortalHeaderIsIgnored(t *testing.T) {
 	auth, _, receivedPortal := authBackendWithPortal(t, http.StatusOK, validAuthJSON)
