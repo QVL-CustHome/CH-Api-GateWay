@@ -1,11 +1,49 @@
 package middleware
 
 import (
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"testing"
 	"time"
 )
+
+// US-06 — validation syntaxique locale de l'en-tête Authorization.
+func TestExtractBearerToken(t *testing.T) {
+	cases := []struct {
+		name      string
+		header    string
+		wantToken string
+		wantErr   error
+	}{
+		{"en-tête absent", "", "", ErrMissingAuthHeader},
+		{"mauvais schéma Basic", "Basic 1234", "", ErrInvalidAuthFormat},
+		{"token brut sans schéma", "abc123", "", ErrInvalidAuthFormat},
+		{"bearer en minuscules", "bearer abc123", "", ErrInvalidAuthFormat},
+		{"Bearer sans token", "Bearer ", "", ErrInvalidAuthFormat},
+		{"Bearer avec espaces seuls", "Bearer    ", "", ErrInvalidAuthFormat},
+		{"token valide", "Bearer abc123", "abc123", nil},
+		{"token JWT valide", "Bearer eyJhbGciOiJIUzI1NiJ9.payload.sig", "eyJhbGciOiJIUzI1NiJ9.payload.sig", nil},
+		{"espaces multiples avant le token", "Bearer   abc123", "abc123", nil},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			req := httptest.NewRequest(http.MethodGet, "/api/protected", nil)
+			if tc.header != "" {
+				req.Header.Set("Authorization", tc.header)
+			}
+
+			token, err := extractBearerToken(req)
+
+			if !errors.Is(err, tc.wantErr) {
+				t.Errorf("erreur = %v, want %v", err, tc.wantErr)
+			}
+			if token != tc.wantToken {
+				t.Errorf("token = %q, want %q", token, tc.wantToken)
+			}
+		})
+	}
+}
 
 // authBackend simule le microservice d'authentification (Rust) et capture
 // l'en-tête Authorization reçu.
