@@ -355,6 +355,38 @@ routes:
 	}
 }
 
+// US-12 : auth_front_url optionnelle mais validée si présente.
+func TestLoadAuthFrontURL(t *testing.T) {
+	base := `
+server:
+  port: 8080
+routes:
+  - path_prefix: "/api/auth"
+    destination_url: "http://localhost:8081"
+`
+	cfg, err := Load(writeTempConfig(t, base))
+	if err != nil {
+		t.Fatalf("Load() erreur inattendue: %v", err)
+	}
+	if cfg.AuthFrontURL != "" {
+		t.Errorf("AuthFrontURL = %q, want vide par défaut", cfg.AuthFrontURL)
+	}
+
+	valid := base + "auth_front_url: \"http://localhost:3000/login\"\n"
+	cfg, err = Load(writeTempConfig(t, valid))
+	if err != nil {
+		t.Fatalf("Load() erreur inattendue: %v", err)
+	}
+	if cfg.AuthFrontURL != "http://localhost:3000/login" {
+		t.Errorf("AuthFrontURL = %q", cfg.AuthFrontURL)
+	}
+
+	invalid := base + "auth_front_url: \"pas-une-url\"\n"
+	if _, err := Load(writeTempConfig(t, invalid)); err == nil {
+		t.Fatal("Load() devrait rejeter une auth_front_url invalide")
+	}
+}
+
 // US-09 : une route protégée sans portail est une erreur de configuration.
 func TestLoadRequireAuthWithoutPortal(t *testing.T) {
 	yaml := `

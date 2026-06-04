@@ -64,7 +64,11 @@ type GatewayConfig struct {
 	AuthServiceURL       string        `yaml:"auth_service_url" json:"auth_service_url"`
 	AuthServiceTimeoutMs int           `yaml:"auth_service_timeout_ms" json:"auth_service_timeout_ms"`
 	AuthCookieName       string        `yaml:"auth_cookie_name" json:"auth_cookie_name"`
-	Routes               []RouteConfig `yaml:"routes" json:"routes"`
+	// US-12 : page de connexion du front d'authentification. Si définie,
+	// un navigateur (Accept: text/html) non authentifié reçoit un 302 vers
+	// cette URL au lieu d'un 401 ; les appels API gardent le 401.
+	AuthFrontURL string        `yaml:"auth_front_url" json:"auth_front_url"`
+	Routes       []RouteConfig `yaml:"routes" json:"routes"`
 }
 
 func Load(path string) (*GatewayConfig, error) {
@@ -135,6 +139,12 @@ func (c *GatewayConfig) validate() error {
 	if c.AuthServiceURL != "" {
 		if err := validateHTTPURL(c.AuthServiceURL); err != nil {
 			return fmt.Errorf("auth_service_url: %w", err)
+		}
+	}
+
+	if c.AuthFrontURL != "" {
+		if err := validateHTTPURL(c.AuthFrontURL); err != nil {
+			return fmt.Errorf("auth_front_url: %w", err)
 		}
 	}
 

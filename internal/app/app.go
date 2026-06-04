@@ -15,7 +15,7 @@ func BuildHandler(cfg *config.GatewayConfig, logger *slog.Logger) (http.Handler,
 	var protect func(portal string, next http.Handler) http.Handler
 	if cfg.AuthServiceURL != "" {
 		timeout := time.Duration(cfg.AuthServiceTimeoutMs) * time.Millisecond
-		authClient := middleware.NewAuthClient(cfg.AuthServiceURL, timeout, cfg.AuthCookieName)
+		authClient := middleware.NewAuthClient(cfg.AuthServiceURL, timeout, cfg.AuthCookieName, cfg.AuthFrontURL)
 		protect = func(portal string, next http.Handler) http.Handler {
 			return middleware.AuthMiddleware(authClient, portal, next)
 		}
