@@ -515,7 +515,10 @@ func TestRouterAppliesProtectionOnlyToProtectedRoutes(t *testing.T) {
 	protectedBackend, protectedCaptured := newBackend(t, http.StatusOK, "protected")
 
 	protectCalls := 0
-	protect := func(next http.Handler) http.Handler {
+	var protectedPortal string
+	protect := func(portal string, next http.Handler) http.Handler {
+		// US-09 : le routeur transmet le portail de la route au middleware.
+		protectedPortal = portal
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			protectCalls++
 			if r.Header.Get("Authorization") == "" {
@@ -528,7 +531,7 @@ func TestRouterAppliesProtectionOnlyToProtectedRoutes(t *testing.T) {
 
 	cfg := &config.GatewayConfig{Routes: []config.RouteConfig{
 		{PathPrefix: "/api/public", DestinationURL: publicBackend.URL},
-		{PathPrefix: "/api/protected", DestinationURL: protectedBackend.URL, RequireAuth: true},
+		{PathPrefix: "/api/protected", DestinationURL: protectedBackend.URL, RequireAuth: true, Portal: "portail_clients"},
 	}}
 	cfg.Server.Port = 8080
 	router, err := NewRouter(cfg, protect)
@@ -537,6 +540,10 @@ func TestRouterAppliesProtectionOnlyToProtectedRoutes(t *testing.T) {
 	}
 	gateway := httptest.NewServer(router)
 	t.Cleanup(gateway.Close)
+
+	if protectedPortal != "portail_clients" {
+		t.Errorf("portail transmis au middleware = %q, want portail_clients", protectedPortal)
+	}
 
 	if _, err := http.Get(gateway.URL + "/api/public/info"); err != nil {
 		t.Fatalf("requête publique: %v", err)

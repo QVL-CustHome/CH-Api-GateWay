@@ -47,3 +47,5 @@ routes:
     destination_url: "http://localhost:8082"
     strip_prefix: false
     require_auth: true
+    # US-09 (sprint Api Authenticator) : portail transmis en X-Portal au /validate.
+    portal: "custhome"

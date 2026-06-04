@@ -308,6 +308,7 @@ routes:
   - path_prefix: "/api/protected"
     destination_url: "http://localhost:8083"
     require_auth: true
+    portal: "portail_clients"
 `
 	cfg, err := Load(writeTempConfig(t, yaml))
 	if err != nil {
@@ -321,6 +322,61 @@ routes:
 	}
 	if !cfg.Routes[1].RequireAuth {
 		t.Error("Routes[1].RequireAuth = false, want true")
+	}
+	if cfg.Routes[1].Portal != "portail_clients" {
+		t.Errorf("Routes[1].Portal = %q, want portail_clients", cfg.Routes[1].Portal)
+	}
+}
+
+// US-09 : une route protégée sans portail est une erreur de configuration.
+func TestLoadRequireAuthWithoutPortal(t *testing.T) {
+	yaml := `
+server:
+  port: 8080
+auth_service_url: "http://localhost:8081/validate"
+routes:
+  - path_prefix: "/api/protected"
+    destination_url: "http://localhost:8083"
+    require_auth: true
+`
+	_, err := Load(writeTempConfig(t, yaml))
+	if err == nil {
+		t.Fatal("Load() devrait échouer quand require_auth est actif sans portal")
+	}
+	if !strings.Contains(err.Error(), "portal") {
+		t.Errorf("l'erreur doit mentionner le champ portal, reçu : %v", err)
+	}
+}
+
+// US-09 : un portail composé d'espaces est traité comme absent.
+func TestLoadRequireAuthWithBlankPortal(t *testing.T) {
+	yaml := `
+server:
+  port: 8080
+auth_service_url: "http://localhost:8081/validate"
+routes:
+  - path_prefix: "/api/protected"
+    destination_url: "http://localhost:8083"
+    require_auth: true
+    portal: "   "
+`
+	if _, err := Load(writeTempConfig(t, yaml)); err == nil {
+		t.Fatal("Load() devrait rejeter un portal vide (espaces)")
+	}
+}
+
+// US-09 : une route publique n'a pas besoin de portail.
+func TestLoadPublicRouteWithoutPortal(t *testing.T) {
+	yaml := `
+server:
+  port: 8080
+routes:
+  - path_prefix: "/api/auth"
+    destination_url: "http://localhost:8081"
+    require_auth: false
+`
+	if _, err := Load(writeTempConfig(t, yaml)); err != nil {
+		t.Errorf("Load() erreur inattendue pour une route publique sans portal: %v", err)
 	}
 }
 
