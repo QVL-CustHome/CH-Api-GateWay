@@ -1,0 +1,14 @@
+# Binaires
+/bin/
+*.exe
+
+# Couverture de tests
+coverage.out
+coverage.html
+
+# IDE
+.idea/
+.vscode/
+
+# Claude Code (config locale)
+.claude/settings.local.json
