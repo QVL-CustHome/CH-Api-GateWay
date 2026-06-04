@@ -9,8 +9,6 @@ import (
 	"github.com/google/uuid"
 )
 
-// serveCorrelation exécute une requête à travers le middleware et capture
-// ce que voit le handler suivant (en-tête propagé + contexte).
 func serveCorrelation(t *testing.T, incomingID string, nextStatus int) (rec *httptest.ResponseRecorder, forwardedID, contextID string) {
 	t.Helper()
 	next := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -28,8 +26,6 @@ func serveCorrelation(t *testing.T, incomingID string, nextStatus int) (rec *htt
 	return rec, forwardedID, contextID
 }
 
-// Scénario 1 — Pas d'identifiant entrant : un UUID v4 est généré et propagé
-// au backend, au contexte et au client.
 func TestCorrelationIDGeneratedWhenAbsent(t *testing.T) {
 	rec, forwardedID, contextID := serveCorrelation(t, "", http.StatusOK)
 
@@ -48,7 +44,6 @@ func TestCorrelationIDGeneratedWhenAbsent(t *testing.T) {
 	}
 }
 
-// Scénario 1 (bis) — Deux requêtes distinctes reçoivent des IDs distincts.
 func TestCorrelationIDUniquePerRequest(t *testing.T) {
 	_, first, _ := serveCorrelation(t, "", http.StatusOK)
 	_, second, _ := serveCorrelation(t, "", http.StatusOK)
@@ -58,8 +53,6 @@ func TestCorrelationIDUniquePerRequest(t *testing.T) {
 	}
 }
 
-// Scénario 2 — Identifiant déjà présent : conservé tel quel partout,
-// aucune génération.
 func TestCorrelationIDPassThrough(t *testing.T) {
 	const existing = "front-abc-123"
 
@@ -76,7 +69,6 @@ func TestCorrelationIDPassThrough(t *testing.T) {
 	}
 }
 
-// Scénario 3 — L'ID est renvoyé au client même quand le traitement échoue.
 func TestCorrelationIDReturnedOnError(t *testing.T) {
 	rec, forwardedID, _ := serveCorrelation(t, "", http.StatusInternalServerError)
 
@@ -88,7 +80,6 @@ func TestCorrelationIDReturnedOnError(t *testing.T) {
 	}
 }
 
-// CorrelationIDFromContext sans middleware : chaîne vide, pas de panique.
 func TestCorrelationIDFromEmptyContext(t *testing.T) {
 	if got := CorrelationIDFromContext(context.Background()); got != "" {
 		t.Errorf("CorrelationIDFromContext() = %q, want \"\"", got)

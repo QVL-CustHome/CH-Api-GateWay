@@ -9,8 +9,6 @@ import (
 	"golang.org/x/time/rate"
 )
 
-// fireRequests envoie n requêtes depuis la même source à travers le
-// middleware et retourne le nombre de 200 et de 429.
 func fireRequests(t *testing.T, rl *RateLimiter, n int, remoteAddr, forwardedFor string) (passed, rejected int) {
 	t.Helper()
 	backendCalls := 0
@@ -45,7 +43,6 @@ func fireRequests(t *testing.T, rl *RateLimiter, n int, remoteAddr, forwardedFor
 	return passed, rejected
 }
 
-// Scénario 1 — Trafic normal sous le quota : tout passe.
 func TestRateLimitUnderQuota(t *testing.T) {
 	rl := NewRateLimiter(10, 20)
 	t.Cleanup(rl.Stop)
@@ -57,16 +54,12 @@ func TestRateLimitUnderQuota(t *testing.T) {
 	}
 }
 
-// Scénario 2 — Dépassement du quota : les 20 premières (burst) passent,
-// les 5 suivantes sont rejetées en 429 sans appel backend.
 func TestRateLimitThrottlingOverQuota(t *testing.T) {
 	rl := NewRateLimiter(10, 20)
 	t.Cleanup(rl.Stop)
 
 	passed, rejected := fireRequests(t, rl, 25, "203.0.113.7:54321", "")
 
-	// Les 25 requêtes partent quasi instantanément : seul le burst passe
-	// (le bucket peut regagner au plus 1 jeton pendant la boucle).
 	if passed < 20 || passed > 21 {
 		t.Errorf("passées = %d, want 20 (±1 jeton régénéré)", passed)
 	}
@@ -78,22 +71,18 @@ func TestRateLimitThrottlingOverQuota(t *testing.T) {
 	}
 }
 
-// Chaque IP possède son propre bucket : une IP saturée ne bloque pas les autres.
 func TestRateLimitIsPerIP(t *testing.T) {
 	rl := NewRateLimiter(1, 2)
 	t.Cleanup(rl.Stop)
 
-	// Sature la première IP.
 	fireRequests(t, rl, 5, "203.0.113.7:1111", "")
 
-	// La seconde IP n'est pas affectée.
 	passed, rejected := fireRequests(t, rl, 2, "198.51.100.9:2222", "")
 	if passed != 2 || rejected != 0 {
 		t.Errorf("seconde IP : passées = %d, rejetées = %d ; want 2 / 0", passed, rejected)
 	}
 }
 
-// Scénario 3 — Extraction de l'IP : X-Forwarded-For prioritaire, sinon RemoteAddr.
 func TestExtractIP(t *testing.T) {
 	cases := []struct {
 		name         string
@@ -122,38 +111,30 @@ func TestExtractIP(t *testing.T) {
 	}
 }
 
-// Derrière un load balancer, c'est bien l'IP du client (X-Forwarded-For)
-// qui est limitée, pas celle du LB : deux clients via le même LB ont des
-// buckets distincts.
 func TestRateLimitUsesForwardedClientIP(t *testing.T) {
 	rl := NewRateLimiter(1, 2)
 	t.Cleanup(rl.Stop)
 
-	lbAddr := "10.0.0.1:80" // même IP TCP (le load balancer) pour tous
+	lbAddr := "10.0.0.1:80"
 
-	// Le premier client épuise son bucket...
 	_, rejected := fireRequests(t, rl, 3, lbAddr, "198.51.100.9")
 	if rejected == 0 {
 		t.Error("le premier client aurait dû être throttlé")
 	}
 
-	// ...le second client, derrière le même LB, n'est pas impacté.
 	passed, rejected := fireRequests(t, rl, 2, lbAddr, "203.0.113.50")
 	if passed != 2 || rejected != 0 {
 		t.Errorf("second client : passées = %d, rejetées = %d ; want 2 / 0", passed, rejected)
 	}
 }
 
-// Scénario 4 — Nettoyage mémoire : les IP inactives au-delà du TTL sont
-// purgées, les actives conservées.
 func TestRemoveStaleVisitors(t *testing.T) {
 	rl := newRateLimiter(rate.Limit(10), 20, 3*time.Minute, time.Minute)
 	t.Cleanup(rl.Stop)
 
-	rl.getVisitor("203.0.113.7") // ancienne IP
+	rl.getVisitor("203.0.113.7")
 	rl.getVisitor("198.51.100.9")
 
-	// Vieillit artificiellement la première IP au-delà du TTL.
 	rl.mu.Lock()
 	rl.visitors["203.0.113.7"].lastSeen = time.Now().Add(-4 * time.Minute)
 	rl.mu.Unlock()
@@ -173,9 +154,8 @@ func TestRemoveStaleVisitors(t *testing.T) {
 	}
 }
 
-// Scénario 4 (bis) — La goroutine d'arrière-plan purge bien toute seule.
 func TestCleanupGoroutine(t *testing.T) {
-	// TTL et intervalle raccourcis pour le test.
+
 	rl := newRateLimiter(rate.Limit(10), 20, 30*time.Millisecond, 10*time.Millisecond)
 	t.Cleanup(rl.Stop)
 
@@ -184,7 +164,6 @@ func TestCleanupGoroutine(t *testing.T) {
 		t.Fatalf("visitorCount = %d, want 1", got)
 	}
 
-	// Attend que l'IP dépasse le TTL et qu'au moins un cycle de nettoyage passe.
 	deadline := time.Now().Add(2 * time.Second)
 	for rl.visitorCount() != 0 && time.Now().Before(deadline) {
 		time.Sleep(10 * time.Millisecond)

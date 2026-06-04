@@ -11,7 +11,6 @@ import (
 	"github.com/custhome/ch-api-gateway/internal/config"
 )
 
-// capturedRequest mémorise ce que le faux backend a réellement reçu.
 type capturedRequest struct {
 	Method string
 	Path   string
@@ -20,8 +19,6 @@ type capturedRequest struct {
 	Header http.Header
 }
 
-// newBackend monte un faux microservice qui capture la requête reçue et
-// renvoie une réponse contrôlée.
 func newBackend(t *testing.T, status int, respBody string) (*httptest.Server, *capturedRequest) {
 	t.Helper()
 	captured := &capturedRequest{}
@@ -46,8 +43,6 @@ func newBackend(t *testing.T, status int, respBody string) (*httptest.Server, *c
 	return srv, captured
 }
 
-// newGatewayRouter construit le routeur du gateway avec les routes données,
-// sans middleware d'authentification.
 func newGatewayRouter(t *testing.T, routes []config.RouteConfig) http.Handler {
 	t.Helper()
 	cfg := &config.GatewayConfig{Routes: routes}
@@ -60,7 +55,6 @@ func newGatewayRouter(t *testing.T, routes []config.RouteConfig) http.Handler {
 	return router
 }
 
-// Scénario 1 — Correspondance de route : méthode, path, query et body préservés.
 func TestProxyForwardsRequestToMatchingBackend(t *testing.T) {
 	backend, captured := newBackend(t, http.StatusOK, `{"token":"abc"}`)
 	router := newGatewayRouter(t, []config.RouteConfig{
@@ -96,7 +90,6 @@ func TestProxyForwardsRequestToMatchingBackend(t *testing.T) {
 	}
 }
 
-// Scénario 2 — La réponse du backend (statut, headers, body) est retransmise telle quelle.
 func TestProxyTransmitsBackendResponse(t *testing.T) {
 	backend, _ := newBackend(t, http.StatusBadRequest, `{"error":"invalid credentials"}`)
 	router := newGatewayRouter(t, []config.RouteConfig{
@@ -126,7 +119,6 @@ func TestProxyTransmitsBackendResponse(t *testing.T) {
 	}
 }
 
-// Scénario 3 — Aucune route correspondante : 404 direct, aucun appel backend.
 func TestRouterNotFoundWithoutCallingBackend(t *testing.T) {
 	backendCalled := false
 	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
@@ -154,7 +146,6 @@ func TestRouterNotFoundWithoutCallingBackend(t *testing.T) {
 	}
 }
 
-// Le préfixe exact (sans slash final) est lui aussi routé.
 func TestRouterMatchesExactPrefix(t *testing.T) {
 	backend, captured := newBackend(t, http.StatusOK, "ok")
 	router := newGatewayRouter(t, []config.RouteConfig{
@@ -177,7 +168,6 @@ func TestRouterMatchesExactPrefix(t *testing.T) {
 	}
 }
 
-// Le routage distingue les préfixes et atteint le bon microservice.
 func TestRouterDispatchesToCorrectBackend(t *testing.T) {
 	authBackend, authCaptured := newBackend(t, http.StatusOK, "auth")
 	usersBackend, usersCaptured := newBackend(t, http.StatusOK, "users")
@@ -200,8 +190,6 @@ func TestRouterDispatchesToCorrectBackend(t *testing.T) {
 	}
 }
 
-// US-03 Scénario 1 — strip_prefix: true : le préfixe est supprimé avant transfert,
-// le reste de la requête (query, body, headers) est inchangé.
 func TestStripPrefixEnabled(t *testing.T) {
 	backend, captured := newBackend(t, http.StatusOK, "ok")
 	router := newGatewayRouter(t, []config.RouteConfig{
@@ -234,7 +222,6 @@ func TestStripPrefixEnabled(t *testing.T) {
 	}
 }
 
-// US-03 Scénario 2 — strip_prefix sur la racine exacte : "" devient "/".
 func TestStripPrefixOnExactRootBecomesSlash(t *testing.T) {
 	backend, captured := newBackend(t, http.StatusOK, "ok")
 	router := newGatewayRouter(t, []config.RouteConfig{
@@ -254,8 +241,6 @@ func TestStripPrefixOnExactRootBecomesSlash(t *testing.T) {
 	}
 }
 
-// US-03 Scénario 3 — strip_prefix absent ou false (valeur zéro Go) :
-// path transmis tel quel.
 func TestStripPrefixDisabledKeepsFullPath(t *testing.T) {
 	backend, captured := newBackend(t, http.StatusOK, "ok")
 	router := newGatewayRouter(t, []config.RouteConfig{
@@ -275,8 +260,6 @@ func TestStripPrefixDisabledKeepsFullPath(t *testing.T) {
 	}
 }
 
-// US-09 Scénario 1 — Le backend répond avant le timeout : réponse transmise
-// normalement.
 func TestTimeoutFastBackendPasses(t *testing.T) {
 	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		time.Sleep(20 * time.Millisecond)
@@ -307,10 +290,9 @@ func TestTimeoutFastBackendPasses(t *testing.T) {
 	}
 }
 
-// US-09 Scénario 2 — Le backend dépasse le timeout : connexion coupée, 504.
 func TestTimeoutSlowBackendReturns504(t *testing.T) {
 	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		time.Sleep(500 * time.Millisecond) // bien au-delà du timeout
+		time.Sleep(500 * time.Millisecond)
 		w.WriteHeader(http.StatusOK)
 	}))
 	t.Cleanup(backend.Close)
@@ -332,18 +314,16 @@ func TestTimeoutSlowBackendReturns504(t *testing.T) {
 	if resp.StatusCode != http.StatusGatewayTimeout {
 		t.Errorf("statut = %d, want 504", resp.StatusCode)
 	}
-	// Le client est libéré dès l'échéance, sans attendre la fin du backend.
+
 	if elapsed := time.Since(start); elapsed >= 450*time.Millisecond {
 		t.Errorf("réponse en %v : le client n'a pas été libéré à l'échéance du timeout", elapsed)
 	}
 }
 
-// US-09 Scénario 3 — Backend éteint (connexion refusée) : 502 immédiat,
-// sans attendre le timeout.
 func TestBackendDownReturns502Immediately(t *testing.T) {
 	backend := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}))
 	backendURL := backend.URL
-	backend.Close() // plus personne n'écoute
+	backend.Close()
 
 	router := newGatewayRouter(t, []config.RouteConfig{
 		{PathPrefix: "/api/users", DestinationURL: backendURL},
@@ -361,14 +341,12 @@ func TestBackendDownReturns502Immediately(t *testing.T) {
 	if resp.StatusCode != http.StatusBadGateway {
 		t.Errorf("statut = %d, want 502", resp.StatusCode)
 	}
-	// Bien en-deçà du timeout global de 5s : l'échec est immédiat.
+
 	if elapsed := time.Since(start); elapsed >= 2*time.Second {
 		t.Errorf("réponse en %v : le 502 aurait dû être immédiat", elapsed)
 	}
 }
 
-// US-09 — Intégration via NewRouter : le timeout configuré (1s) s'applique
-// au pipeline complet de la route.
 func TestRouterAppliesConfiguredTimeout(t *testing.T) {
 	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		time.Sleep(1500 * time.Millisecond)
@@ -416,8 +394,6 @@ func TestNewRouterInvalidDestination(t *testing.T) {
 	}
 }
 
-// US-05 — le décorateur d'authentification n'est appliqué qu'aux routes
-// require_auth: true ; les routes publiques restent directes.
 func TestRouterAppliesProtectionOnlyToProtectedRoutes(t *testing.T) {
 	publicBackend, publicCaptured := newBackend(t, http.StatusOK, "public")
 	protectedBackend, protectedCaptured := newBackend(t, http.StatusOK, "protected")
@@ -446,7 +422,6 @@ func TestRouterAppliesProtectionOnlyToProtectedRoutes(t *testing.T) {
 	gateway := httptest.NewServer(router)
 	t.Cleanup(gateway.Close)
 
-	// Route publique : aucun passage par le middleware d'auth.
 	if _, err := http.Get(gateway.URL + "/api/public/info"); err != nil {
 		t.Fatalf("requête publique: %v", err)
 	}
@@ -457,7 +432,6 @@ func TestRouterAppliesProtectionOnlyToProtectedRoutes(t *testing.T) {
 		t.Errorf("backend public a reçu %q", publicCaptured.Path)
 	}
 
-	// Route protégée sans token : 401, backend jamais appelé.
 	resp, err := http.Get(gateway.URL + "/api/protected/data")
 	if err != nil {
 		t.Fatalf("requête protégée sans token: %v", err)
@@ -470,7 +444,6 @@ func TestRouterAppliesProtectionOnlyToProtectedRoutes(t *testing.T) {
 		t.Errorf("le backend protégé ne devait pas être appelé, a reçu %q", protectedCaptured.Path)
 	}
 
-	// Route protégée avec token : transférée au backend.
 	req, _ := http.NewRequest(http.MethodGet, gateway.URL+"/api/protected/data", nil)
 	req.Header.Set("Authorization", "Bearer token")
 	resp2, err := http.DefaultClient.Do(req)
@@ -486,7 +459,6 @@ func TestRouterAppliesProtectionOnlyToProtectedRoutes(t *testing.T) {
 	}
 }
 
-// US-05 — route protégée sans middleware fourni : erreur de construction.
 func TestNewRouterProtectedRouteWithoutMiddleware(t *testing.T) {
 	cfg := &config.GatewayConfig{Routes: []config.RouteConfig{
 		{PathPrefix: "/api/protected", DestinationURL: "http://localhost:8083", RequireAuth: true},

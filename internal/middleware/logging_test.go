@@ -11,7 +11,6 @@ import (
 	"time"
 )
 
-// accessLog reflète la ligne JSON émise par le LoggingMiddleware.
 type accessLog struct {
 	Time          string  `json:"time"`
 	Level         string  `json:"level"`
@@ -25,8 +24,6 @@ type accessLog struct {
 	CorrelationID string  `json:"correlation_id"`
 }
 
-// serveLogging fait passer une requête dans CorrelationID → Logging → handler
-// (ordre du pipeline réel) et retourne la ligne de log JSON décodée.
 func serveLogging(t *testing.T, handler http.HandlerFunc, correlationIn string) accessLog {
 	t.Helper()
 	var buf bytes.Buffer
@@ -48,10 +45,9 @@ func serveLogging(t *testing.T, handler http.HandlerFunc, correlationIn string) 
 	return entry
 }
 
-// Scénario 1 — Requête en succès : ligne INFO en JSON avec toutes les clés.
 func TestAccessLogSuccess(t *testing.T) {
 	entry := serveLogging(t, func(w http.ResponseWriter, _ *http.Request) {
-		time.Sleep(20 * time.Millisecond) // latence mesurable dans le log
+		time.Sleep(20 * time.Millisecond)
 		io.WriteString(w, "hello")
 	}, "trace-123")
 
@@ -70,7 +66,7 @@ func TestAccessLogSuccess(t *testing.T) {
 	if entry.Status != http.StatusOK {
 		t.Errorf("status = %d, want 200 (implicite sans WriteHeader)", entry.Status)
 	}
-	// slog.Duration sérialise en nanosecondes : au moins ~10ms attendus.
+
 	if entry.Duration < float64(10*time.Millisecond) {
 		t.Errorf("duration = %v ns, want >= 10ms", entry.Duration)
 	}
@@ -85,8 +81,6 @@ func TestAccessLogSuccess(t *testing.T) {
 	}
 }
 
-// Scénario 2 — Requête en erreur : le statut loggué reflète exactement
-// l'erreur renvoyée au client.
 func TestAccessLogErrorStatuses(t *testing.T) {
 	for _, status := range []int{http.StatusUnauthorized, http.StatusNotFound, http.StatusGatewayTimeout} {
 		t.Run(http.StatusText(status), func(t *testing.T) {
@@ -104,7 +98,6 @@ func TestAccessLogErrorStatuses(t *testing.T) {
 	}
 }
 
-// Le Correlation ID généré par le middleware amont est bien retrouvé dans le log.
 func TestAccessLogGeneratedCorrelationID(t *testing.T) {
 	entry := serveLogging(t, func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
@@ -115,7 +108,6 @@ func TestAccessLogGeneratedCorrelationID(t *testing.T) {
 	}
 }
 
-// Le responseRecorder accumule la taille sur plusieurs écritures.
 func TestResponseRecorderAccumulatesSize(t *testing.T) {
 	entry := serveLogging(t, func(w http.ResponseWriter, _ *http.Request) {
 		io.WriteString(w, "part1-")
@@ -127,7 +119,6 @@ func TestResponseRecorderAccumulatesSize(t *testing.T) {
 	}
 }
 
-// Un logger configuré en WARN supprime les access logs INFO (verbosité YAML).
 func TestAccessLogSuppressedAboveInfoLevel(t *testing.T) {
 	var buf bytes.Buffer
 	logger := slog.New(slog.NewJSONHandler(&buf, &slog.HandlerOptions{Level: slog.LevelWarn}))
