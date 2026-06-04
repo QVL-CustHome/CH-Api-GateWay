@@ -4,11 +4,14 @@
 package proxy
 
 import (
+	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httputil"
 	"net/url"
 	"strings"
+	"time"
 
 	"github.com/custhome/ch-api-gateway/internal/config"
 )
@@ -33,6 +36,7 @@ func NewProxyHandler(route config.RouteConfig) (*ProxyHandler, error) {
 	}
 
 	proxy := httputil.NewSingleHostReverseProxy(parsedURL)
+	configureProxyErrorHandler(proxy)
 
 	originalDirector := proxy.Director
 	proxy.Director = func(req *http.Request) {
@@ -59,6 +63,31 @@ func (h *ProxyHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	h.ReverseProxy.ServeHTTP(w, r)
 }
 
+// configureProxyErrorHandler mappe les erreurs de transfert vers les bons
+// statuts HTTP (US-09) : dépassement du délai → 504 Gateway Timeout,
+// toute autre erreur réseau (ex: connexion refusée) → 502 Bad Gateway.
+func configureProxyErrorHandler(proxy *httputil.ReverseProxy) {
+	proxy.ErrorHandler = func(w http.ResponseWriter, r *http.Request, err error) {
+		if errors.Is(err, context.DeadlineExceeded) {
+			http.Error(w, "Gateway Timeout", http.StatusGatewayTimeout)
+			return
+		}
+		http.Error(w, "Bad Gateway", http.StatusBadGateway)
+	}
+}
+
+// TimeoutMiddleware borne la durée totale de l'appel au backend (US-09) en
+// injectant une échéance dans le contexte de la requête ; à expiration, le
+// transport du ReverseProxy est annulé et l'ErrorHandler renvoie un 504.
+func TimeoutMiddleware(timeout time.Duration, next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		ctx, cancel := context.WithTimeout(r.Context(), timeout)
+		defer cancel()
+
+		next.ServeHTTP(w, r.WithContext(ctx))
+	})
+}
+
 // NewRouter construit le multiplexeur principal du gateway : chaque
 // path_prefix de la configuration est associé à son reverse proxy, et
 // toute requête sans correspondance reçoit un 404 sans jamais être
@@ -70,11 +99,18 @@ func (h *ProxyHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 func NewRouter(cfg *config.GatewayConfig, protect func(http.Handler) http.Handler) (http.Handler, error) {
 	mux := http.NewServeMux()
 
+	timeout := time.Duration(cfg.Server.TimeoutSeconds) * time.Second
+
 	for _, route := range cfg.Routes {
 		var handler http.Handler
 		handler, err := NewProxyHandler(route)
 		if err != nil {
 			return nil, err
+		}
+
+		// US-09 : le timeout englobe l'appel final au proxy.
+		if timeout > 0 {
+			handler = TimeoutMiddleware(timeout, handler)
 		}
 
 		// US-05 : seules les routes protégées passent par la validation
