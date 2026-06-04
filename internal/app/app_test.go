@@ -157,6 +157,78 @@ func TestBuildHandlerProtectedRouteWiresAuth(t *testing.T) {
 	}
 }
 
+// US-10 : l'IP client transmise en X-Client-IP, avec et sans proxy de confiance,
+// au service d'auth (/validate) ET au backend proxifié (login Authenticator).
+func TestBuildHandlerForwardsClientIP(t *testing.T) {
+	run := func(t *testing.T, trustedProxies []string, forwardedFor, wantIP string) {
+		var authSeenIP, backendSeenIP string
+		authSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			authSeenIP = r.Header.Get(middleware.HeaderClientIP)
+			w.WriteHeader(http.StatusOK)
+			w.Write([]byte(`{"user_id":"u-1","role":"user"}`))
+		}))
+		t.Cleanup(authSrv.Close)
+		backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			backendSeenIP = r.Header.Get(middleware.HeaderClientIP)
+			w.WriteHeader(http.StatusOK)
+		}))
+		t.Cleanup(backend.Close)
+
+		cfg := testConfig(
+			config.RouteConfig{PathPrefix: "/api/auth", DestinationURL: backend.URL},
+			config.RouteConfig{PathPrefix: "/api/protected", DestinationURL: backend.URL, RequireAuth: true, Portal: "portail_test"},
+		)
+		cfg.AuthServiceURL = authSrv.URL
+		cfg.Server.RateLimit.TrustedProxies = trustedProxies
+
+		handler, _, err := BuildHandler(cfg, testLogger())
+		if err != nil {
+			t.Fatalf("BuildHandler(): %v", err)
+		}
+		gateway := httptest.NewServer(handler)
+		t.Cleanup(gateway.Close)
+
+		// Route publique (le « login » proxifié vers l'Authenticator),
+		// avec un X-Client-IP forgé qui doit être écrasé.
+		req, _ := http.NewRequest(http.MethodGet, gateway.URL+"/api/auth/login", nil)
+		req.Header.Set(middleware.HeaderClientIP, "6.6.6.6")
+		if forwardedFor != "" {
+			req.Header.Set("X-Forwarded-For", forwardedFor)
+		}
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatalf("requête publique: %v", err)
+		}
+		resp.Body.Close()
+		if backendSeenIP != wantIP {
+			t.Errorf("X-Client-IP reçu par le backend proxifié = %q, want %q", backendSeenIP, wantIP)
+		}
+
+		// Route protégée : le /validate reçoit la même IP.
+		req2, _ := http.NewRequest(http.MethodGet, gateway.URL+"/api/protected/data", nil)
+		req2.Header.Set("Authorization", "Bearer token")
+		if forwardedFor != "" {
+			req2.Header.Set("X-Forwarded-For", forwardedFor)
+		}
+		resp2, err := http.DefaultClient.Do(req2)
+		if err != nil {
+			t.Fatalf("requête protégée: %v", err)
+		}
+		resp2.Body.Close()
+		if authSeenIP != wantIP {
+			t.Errorf("X-Client-IP reçu par le service d'auth = %q, want %q", authSeenIP, wantIP)
+		}
+	}
+
+	t.Run("sans proxy de confiance, X-Forwarded-For ignoré", func(t *testing.T) {
+		// httptest se connecte depuis la boucle locale : l'adresse TCP fait foi.
+		run(t, nil, "203.0.113.7", "127.0.0.1")
+	})
+	t.Run("derrière un proxy de confiance, X-Forwarded-For honoré", func(t *testing.T) {
+		run(t, []string{"127.0.0.1"}, "203.0.113.7", "203.0.113.7")
+	})
+}
+
 func TestBuildHandlerErrorProtectedRouteWithoutAuthURL(t *testing.T) {
 	cfg := testConfig(config.RouteConfig{PathPrefix: "/api/protected", DestinationURL: "http://localhost:1", RequireAuth: true, Portal: "portail_test"})
 

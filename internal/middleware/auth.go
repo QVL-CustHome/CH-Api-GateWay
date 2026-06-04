@@ -20,6 +20,10 @@ const (
 	// US-09 : portail visé par la route, transmis à l'Authenticator
 	// qui résout le rôle de l'utilisateur pour CE portail.
 	HeaderPortal = "X-Portal"
+	// US-10 : IP client réelle (résolue via trusted_proxies), transmise à
+	// l'Authenticator pour la whitelist IP par utilisateur. Header de
+	// confiance : purgé s'il vient de l'extérieur (trustedheaders.go).
+	HeaderClientIP = "X-Client-IP"
 )
 
 type AuthResponse struct {
@@ -68,6 +72,10 @@ func AuthMiddleware(authClient *AuthClient, portal string, next http.Handler) ht
 		req.Header.Set("Authorization", "Bearer "+token)
 		// US-09 : l'Authenticator résout roles[X-Portal] → 403 si aucun rôle.
 		req.Header.Set(HeaderPortal, portal)
+		// US-10 : IP client réelle pour les comptes whitelist (claim ip du token).
+		if clientIP := ClientIPFromContext(r.Context()); clientIP != "" {
+			req.Header.Set(HeaderClientIP, clientIP)
+		}
 		if correlationID := r.Header.Get(CorrelationHeader); correlationID != "" {
 			req.Header.Set(CorrelationHeader, correlationID)
 		}
