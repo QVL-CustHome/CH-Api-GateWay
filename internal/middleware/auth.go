@@ -5,6 +5,7 @@ import (
 	"errors"
 	"io"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 )
@@ -38,9 +39,12 @@ type AuthClient struct {
 	authURL string
 	// US-11 : nom du cookie HttpOnly porteur du token (fallback du header).
 	cookieName string
+	// US-12 : page de connexion du front d'auth — 302 pour les navigateurs
+	// non authentifiés quand elle est définie, 401 sinon.
+	authFrontURL string
 }
 
-func NewAuthClient(url string, timeout time.Duration, cookieName string) *AuthClient {
+func NewAuthClient(url string, timeout time.Duration, cookieName, authFrontURL string) *AuthClient {
 	return &AuthClient{
 		client: &http.Client{
 			Timeout: timeout,
@@ -50,9 +54,36 @@ func NewAuthClient(url string, timeout time.Duration, cookieName string) *AuthCl
 				IdleConnTimeout:     90 * time.Second,
 			},
 		},
-		authURL:    url,
-		cookieName: cookieName,
+		authURL:      url,
+		cookieName:   cookieName,
+		authFrontURL: authFrontURL,
 	}
+}
+
+// US-12 : sur un 401, un navigateur est redirigé vers la page de connexion
+// avec l'URL d'origine en paramètre `redirect` ; les appels API gardent le
+// 401 brut. Le middleware n'enveloppant que les routes protégées, les
+// routes publiques (/api/auth…) sont structurellement hors du mécanisme —
+// aucune boucle de redirection possible.
+func (c *AuthClient) unauthorized(w http.ResponseWriter, r *http.Request) {
+	if c.authFrontURL != "" && strings.Contains(r.Header.Get("Accept"), "text/html") {
+		http.Redirect(w, r, loginRedirectURL(c.authFrontURL, r.URL.RequestURI()), http.StatusFound)
+		return
+	}
+	http.Error(w, "Unauthorized", http.StatusUnauthorized)
+}
+
+// Construit {authFrontURL}?redirect={target encodé}, en préservant
+// d'éventuels paramètres déjà présents dans l'URL du front.
+func loginRedirectURL(front, target string) string {
+	u, err := url.Parse(front)
+	if err != nil {
+		return front
+	}
+	q := u.Query()
+	q.Set("redirect", target)
+	u.RawQuery = q.Encode()
+	return u.String()
 }
 
 func AuthMiddleware(authClient *AuthClient, portal string, next http.Handler) http.Handler {
@@ -63,7 +94,7 @@ func AuthMiddleware(authClient *AuthClient, portal string, next http.Handler) ht
 
 		token, err := extractToken(r, authClient.cookieName)
 		if err != nil {
-			http.Error(w, "Unauthorized", http.StatusUnauthorized)
+			authClient.unauthorized(w, r)
 			return
 		}
 
@@ -105,8 +136,12 @@ func AuthMiddleware(authClient *AuthClient, portal string, next http.Handler) ht
 				r.Header.Set(HeaderUserRole, authData.Role)
 			}
 			next.ServeHTTP(w, r)
-		case http.StatusUnauthorized, http.StatusForbidden:
-
+		case http.StatusUnauthorized:
+			// US-12 : session absente/expirée → page de connexion pour un navigateur.
+			authClient.unauthorized(w, r)
+		case http.StatusForbidden:
+			// Authentifié mais aucun rôle sur ce portail : rediriger vers le
+			// login n'y changerait rien (et bouclerait), le 403 est conservé.
 			http.Error(w, http.StatusText(resp.StatusCode), resp.StatusCode)
 		default:
 

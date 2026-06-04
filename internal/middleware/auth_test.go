@@ -90,7 +90,7 @@ func serveAuth(t *testing.T, authURL, authorization string, extraHeaders map[str
 		req.Header.Set(k, v)
 	}
 	rec := httptest.NewRecorder()
-	AuthMiddleware(NewAuthClient(authURL, 100*time.Millisecond, testCookieName), testPortal, next).ServeHTTP(rec, req)
+	AuthMiddleware(NewAuthClient(authURL, 100*time.Millisecond, testCookieName, ""), testPortal, next).ServeHTTP(rec, req)
 	return rec, nextCalled, nextHeaders
 }
 
@@ -124,7 +124,7 @@ func TestAuthTokenFromCookieOrHeader(t *testing.T) {
 				req.AddCookie(&http.Cookie{Name: testCookieName, Value: tc.cookie})
 			}
 			rec := httptest.NewRecorder()
-			AuthMiddleware(NewAuthClient(auth.URL, 100*time.Millisecond, testCookieName), testPortal, next).ServeHTTP(rec, req)
+			AuthMiddleware(NewAuthClient(auth.URL, 100*time.Millisecond, testCookieName, ""), testPortal, next).ServeHTTP(rec, req)
 
 			if rec.Code != tc.wantStatus {
 				t.Errorf("statut = %d, want %d", rec.Code, tc.wantStatus)
@@ -136,6 +136,87 @@ func TestAuthTokenFromCookieOrHeader(t *testing.T) {
 	}
 }
 
+// US-12 : matrice de redirection des navigateurs non authentifiés.
+func TestBrowserRedirectToAuthFront(t *testing.T) {
+	const front = "http://localhost:3000/login"
+
+	cases := []struct {
+		name         string
+		frontURL     string
+		accept       string
+		authStatus   int // statut renvoyé par le service d'auth (0 = pas de token envoyé)
+		wantStatus   int
+		wantLocation string
+	}{
+		{
+			name:     "navigateur sans token vers 302 front avec redirect",
+			frontURL: front, accept: "text/html,application/xhtml+xml",
+			wantStatus: http.StatusFound, wantLocation: front + "?redirect=%2Fapi%2Fprotected%2Fdata%3Fpage%3D2",
+		},
+		{
+			name:     "appel API sans token garde son 401",
+			frontURL: front, accept: "application/json",
+			wantStatus: http.StatusUnauthorized,
+		},
+		{
+			name:     "sans Accept garde son 401",
+			frontURL: front, accept: "",
+			wantStatus: http.StatusUnauthorized,
+		},
+		{
+			name:     "auth_front_url non configuree : 401 meme pour un navigateur",
+			frontURL: "", accept: "text/html",
+			wantStatus: http.StatusUnauthorized,
+		},
+		{
+			name:     "navigateur avec session expiree (401 du service) vers 302",
+			frontURL: front, accept: "text/html", authStatus: http.StatusUnauthorized,
+			wantStatus: http.StatusFound, wantLocation: front + "?redirect=%2Fapi%2Fprotected%2Fdata%3Fpage%3D2",
+		},
+		{
+			name:     "navigateur authentifie sans role (403) conserve, pas de boucle",
+			frontURL: front, accept: "text/html", authStatus: http.StatusForbidden,
+			wantStatus: http.StatusForbidden,
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			auth := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				w.WriteHeader(tc.authStatus)
+			}))
+			t.Cleanup(auth.Close)
+
+			next := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusOK) })
+			req := httptest.NewRequest(http.MethodGet, "/api/protected/data?page=2", nil)
+			if tc.accept != "" {
+				req.Header.Set("Accept", tc.accept)
+			}
+			if tc.authStatus != 0 {
+				req.Header.Set("Authorization", "Bearer token-teste-par-le-service")
+			}
+			rec := httptest.NewRecorder()
+			AuthMiddleware(NewAuthClient(auth.URL, 100*time.Millisecond, testCookieName, tc.frontURL), testPortal, next).ServeHTTP(rec, req)
+
+			if rec.Code != tc.wantStatus {
+				t.Errorf("statut = %d, want %d", rec.Code, tc.wantStatus)
+			}
+			if got := rec.Header().Get("Location"); got != tc.wantLocation {
+				t.Errorf("Location = %q, want %q", got, tc.wantLocation)
+			}
+		})
+	}
+}
+
+// US-12 : les paramètres déjà présents dans l'URL du front sont préservés.
+func TestLoginRedirectURLPreservesExistingQuery(t *testing.T) {
+	got := loginRedirectURL("http://localhost:3000/login?theme=dark", "/api/x")
+	want := "http://localhost:3000/login?redirect=%2Fapi%2Fx&theme=dark"
+	if got != want {
+		t.Errorf("loginRedirectURL = %q, want %q", got, want)
+	}
+}
+
 // US-11 : un autre cookie que celui configuré ne donne jamais accès.
 func TestAuthIgnoresOtherCookies(t *testing.T) {
 	auth, receivedAuth := authBackend(t, http.StatusOK, validAuthJSON)
@@ -144,7 +225,7 @@ func TestAuthIgnoresOtherCookies(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "/api/protected/data", nil)
 	req.AddCookie(&http.Cookie{Name: "session_marketing", Value: "token-pirate"})
 	rec := httptest.NewRecorder()
-	AuthMiddleware(NewAuthClient(auth.URL, 100*time.Millisecond, testCookieName), testPortal, next).ServeHTTP(rec, req)
+	AuthMiddleware(NewAuthClient(auth.URL, 100*time.Millisecond, testCookieName, ""), testPortal, next).ServeHTTP(rec, req)
 
 	if rec.Code != http.StatusUnauthorized {
 		t.Errorf("statut = %d, want 401", rec.Code)
@@ -184,7 +265,7 @@ func TestAuthSendsClientIP(t *testing.T) {
 		t.Fatalf("NewIPExtractor: %v", err)
 	}
 	handler := extractor.Middleware(
-		AuthMiddleware(NewAuthClient(auth.URL, 100*time.Millisecond, testCookieName), testPortal, next),
+		AuthMiddleware(NewAuthClient(auth.URL, 100*time.Millisecond, testCookieName, ""), testPortal, next),
 	)
 
 	req := httptest.NewRequest(http.MethodGet, "/api/protected/data", nil)

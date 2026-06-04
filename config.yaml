@@ -40,6 +40,10 @@ auth_service_timeout_ms: 100
 # US-11 (sprint Api Authenticator) : cookie HttpOnly posé au login par
 # l'Authenticator, lu en complément du header Authorization (qui prime).
 auth_cookie_name: "ch_token"
+# US-12 (sprint Api Authenticator) : page de connexion du front d'auth.
+# Navigateur (Accept: text/html) non authentifié → 302 {url}?redirect={page demandée}.
+# Les appels API gardent leur 401. Vide = jamais de redirection.
+auth_front_url: "http://localhost:3000/login"
 
 routes:
   - path_prefix: "/api/auth"
