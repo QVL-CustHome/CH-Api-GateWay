@@ -27,9 +27,19 @@ func main() {
 		log.Printf("  route %s -> %s", r.PathPrefix, r.DestinationURL)
 	}
 
+	// US-05 : les routes require_auth valident le token auprès du
+	// microservice d'authentification avant tout transfert.
+	var protect func(http.Handler) http.Handler
+	if cfg.AuthServiceURL != "" {
+		authClient := middleware.NewAuthClient(cfg.AuthServiceURL)
+		protect = func(next http.Handler) http.Handler {
+			return middleware.AuthMiddleware(authClient, next)
+		}
+	}
+
 	// US-02 : le routeur reverse proxy traite tout le trafic ;
 	// /health reste servi en direct par le gateway.
-	router, err := proxy.NewRouter(cfg)
+	router, err := proxy.NewRouter(cfg, protect)
 	if err != nil {
 		log.Fatalf("démarrage impossible: %v", err)
 	}

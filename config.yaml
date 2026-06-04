@@ -17,10 +17,15 @@ server:
       - "Content-Type"
       - "X-Correlation-ID"
 
+# US-05 : endpoint de validation du microservice d'authentification (Rust).
+auth_service_url: "http://localhost:8081/validate"
+
 routes:
   - path_prefix: "/api/auth"
     destination_url: "http://localhost:8081"
     strip_prefix: true
+    require_auth: false # routes publiques (login, register…)
   - path_prefix: "/api/users"
     destination_url: "http://localhost:8082"
     strip_prefix: false
+    require_auth: true

@@ -51,6 +51,65 @@ func TestLoadValidFile(t *testing.T) {
 	}
 }
 
+// US-05 — auth_service_url et require_auth sont parsés.
+func TestLoadAuthConfig(t *testing.T) {
+	yaml := `
+server:
+  port: 8080
+auth_service_url: "http://localhost:8081/validate"
+routes:
+  - path_prefix: "/api/public"
+    destination_url: "http://localhost:8082"
+    require_auth: false
+  - path_prefix: "/api/protected"
+    destination_url: "http://localhost:8083"
+    require_auth: true
+`
+	cfg, err := Load(writeTempConfig(t, yaml))
+	if err != nil {
+		t.Fatalf("Load() erreur inattendue: %v", err)
+	}
+	if cfg.AuthServiceURL != "http://localhost:8081/validate" {
+		t.Errorf("AuthServiceURL = %q", cfg.AuthServiceURL)
+	}
+	if cfg.Routes[0].RequireAuth {
+		t.Error("Routes[0].RequireAuth = true, want false")
+	}
+	if !cfg.Routes[1].RequireAuth {
+		t.Error("Routes[1].RequireAuth = false, want true")
+	}
+}
+
+// US-05 — require_auth sans auth_service_url : configuration rejetée.
+func TestLoadRequireAuthWithoutAuthServiceURL(t *testing.T) {
+	yaml := `
+server:
+  port: 8080
+routes:
+  - path_prefix: "/api/protected"
+    destination_url: "http://localhost:8083"
+    require_auth: true
+`
+	if _, err := Load(writeTempConfig(t, yaml)); err == nil {
+		t.Fatal("Load() devrait échouer quand require_auth est actif sans auth_service_url")
+	}
+}
+
+// US-05 — auth_service_url invalide : configuration rejetée.
+func TestLoadInvalidAuthServiceURL(t *testing.T) {
+	yaml := `
+server:
+  port: 8080
+auth_service_url: "pas-une-url"
+routes:
+  - path_prefix: "/api/auth"
+    destination_url: "http://localhost:8081"
+`
+	if _, err := Load(writeTempConfig(t, yaml)); err == nil {
+		t.Fatal("Load() devrait rejeter une auth_service_url invalide")
+	}
+}
+
 // US-04 — le bloc server.cors est parsé.
 func TestLoadCORSConfig(t *testing.T) {
 	yaml := `
