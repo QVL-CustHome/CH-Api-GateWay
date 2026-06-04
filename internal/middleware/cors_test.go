@@ -111,6 +111,43 @@ func TestVaryOriginHeader(t *testing.T) {
 	}
 }
 
+func TestPreflightValidatesRequestedMethod(t *testing.T) {
+	next := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		t.Error("le preflight ne doit jamais atteindre le handler suivant")
+	})
+	handler := CORSMiddleware(testCORSConfig(), next)
+
+	req := httptest.NewRequest(http.MethodOptions, "/api/users", nil)
+	req.Header.Set("Origin", "http://localhost:3000")
+	req.Header.Set("Access-Control-Request-Method", "PATCH")
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusNoContent {
+		t.Errorf("statut = %d, want 204", rec.Code)
+	}
+	if got := rec.Header().Get("Access-Control-Allow-Origin"); got != "" {
+		t.Errorf("Allow-Origin = %q pour une méthode non autorisée, want absent", got)
+	}
+	if got := rec.Header().Get("Access-Control-Allow-Methods"); got != "" {
+		t.Errorf("Allow-Methods = %q pour une méthode non autorisée, want absent", got)
+	}
+}
+
+func TestPreflightAcceptsAllowedRequestedMethod(t *testing.T) {
+	handler := CORSMiddleware(testCORSConfig(), http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {}))
+
+	req := httptest.NewRequest(http.MethodOptions, "/api/users", nil)
+	req.Header.Set("Origin", "http://localhost:3000")
+	req.Header.Set("Access-Control-Request-Method", "post")
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	if got := rec.Header().Get("Access-Control-Allow-Origin"); got != "http://localhost:3000" {
+		t.Errorf("Allow-Origin = %q, want http://localhost:3000 (méthode demandée autorisée, casse ignorée)", got)
+	}
+}
+
 func TestCORSMaxAgeOnPreflight(t *testing.T) {
 	cfg := testCORSConfig()
 	cfg.MaxAgeSeconds = 600

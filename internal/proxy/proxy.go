@@ -26,8 +26,6 @@ func NewProxyHandler(route config.RouteConfig) (*ProxyHandler, error) {
 
 	proxy := &httputil.ReverseProxy{
 		Rewrite: func(pr *httputil.ProxyRequest) {
-			pr.SetURL(parsedURL)
-			pr.SetXForwarded()
 			if route.StripPrefix {
 				pr.Out.URL.Path = strings.TrimPrefix(pr.Out.URL.Path, route.PathPrefix)
 				if pr.Out.URL.Path == "" {
@@ -35,6 +33,8 @@ func NewProxyHandler(route config.RouteConfig) (*ProxyHandler, error) {
 				}
 				pr.Out.URL.RawPath = ""
 			}
+			pr.SetURL(parsedURL)
+			pr.SetXForwarded()
 		},
 	}
 	configureProxyErrorHandler(proxy)
