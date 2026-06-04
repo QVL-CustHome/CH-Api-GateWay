@@ -21,11 +21,20 @@ type RouteConfig struct {
 	StripPrefix    bool   `yaml:"strip_prefix" json:"strip_prefix"`
 }
 
+// CORSConfig définit la politique CORS globale appliquée par le gateway
+// (US-04) : seules les origines listées reçoivent les en-têtes CORS.
+type CORSConfig struct {
+	AllowedOrigins []string `yaml:"allowed_origins" json:"allowed_origins"`
+	AllowedMethods []string `yaml:"allowed_methods" json:"allowed_methods"`
+	AllowedHeaders []string `yaml:"allowed_headers" json:"allowed_headers"`
+}
+
 // GatewayConfig est la configuration complète du gateway, chargée une seule
 // fois au lancement de l'exécutable.
 type GatewayConfig struct {
 	Server struct {
-		Port int `yaml:"port" json:"port"`
+		Port int        `yaml:"port" json:"port"`
+		CORS CORSConfig `yaml:"cors" json:"cors"`
 	} `yaml:"server" json:"server"`
 	Routes []RouteConfig `yaml:"routes" json:"routes"`
 }

@@ -51,6 +51,39 @@ func TestLoadValidFile(t *testing.T) {
 	}
 }
 
+// US-04 — le bloc server.cors est parsé.
+func TestLoadCORSConfig(t *testing.T) {
+	yaml := `
+server:
+  port: 8080
+  cors:
+    allowed_origins:
+      - "http://localhost:3000"
+    allowed_methods:
+      - "GET"
+      - "POST"
+    allowed_headers:
+      - "Authorization"
+routes:
+  - path_prefix: "/api/auth"
+    destination_url: "http://localhost:8081"
+`
+	cfg, err := Load(writeTempConfig(t, yaml))
+	if err != nil {
+		t.Fatalf("Load() erreur inattendue: %v", err)
+	}
+	cors := cfg.Server.CORS
+	if len(cors.AllowedOrigins) != 1 || cors.AllowedOrigins[0] != "http://localhost:3000" {
+		t.Errorf("AllowedOrigins = %v", cors.AllowedOrigins)
+	}
+	if len(cors.AllowedMethods) != 2 {
+		t.Errorf("AllowedMethods = %v, want 2 éléments", cors.AllowedMethods)
+	}
+	if len(cors.AllowedHeaders) != 1 || cors.AllowedHeaders[0] != "Authorization" {
+		t.Errorf("AllowedHeaders = %v", cors.AllowedHeaders)
+	}
+}
+
 // US-03 — le champ strip_prefix est parsé, et vaut false par défaut.
 func TestLoadStripPrefix(t *testing.T) {
 	yaml := `
