@@ -32,14 +32,24 @@ type CORSConfig struct {
 	AllowedHeaders []string `yaml:"allowed_headers" json:"allowed_headers"`
 }
 
+// RateLimitConfig définit la limitation de trafic par IP (US-08) selon
+// l'algorithme du Token Bucket : RequestsPerSecond jetons par seconde,
+// rafale maximale de Burst requêtes.
+type RateLimitConfig struct {
+	Enabled           bool    `yaml:"enabled" json:"enabled"`
+	RequestsPerSecond float64 `yaml:"requests_per_second" json:"requests_per_second"`
+	Burst             int     `yaml:"burst" json:"burst"`
+}
+
 // GatewayConfig est la configuration complète du gateway, chargée une seule
 // fois au lancement de l'exécutable.
 // AuthServiceURL (US-05) est l'endpoint de validation du microservice
 // d'authentification ; obligatoire dès qu'une route a require_auth: true.
 type GatewayConfig struct {
 	Server struct {
-		Port int        `yaml:"port" json:"port"`
-		CORS CORSConfig `yaml:"cors" json:"cors"`
+		Port      int             `yaml:"port" json:"port"`
+		CORS      CORSConfig      `yaml:"cors" json:"cors"`
+		RateLimit RateLimitConfig `yaml:"rate_limit" json:"rate_limit"`
 	} `yaml:"server" json:"server"`
 	AuthServiceURL string        `yaml:"auth_service_url" json:"auth_service_url"`
 	Routes         []RouteConfig `yaml:"routes" json:"routes"`
@@ -82,6 +92,15 @@ func (c *GatewayConfig) validate() error {
 	if c.AuthServiceURL != "" {
 		if err := validateHTTPURL(c.AuthServiceURL); err != nil {
 			return fmt.Errorf("auth_service_url: %w", err)
+		}
+	}
+
+	if rl := c.Server.RateLimit; rl.Enabled {
+		if rl.RequestsPerSecond <= 0 {
+			return fmt.Errorf("server.rate_limit.requests_per_second doit être > 0, reçu %v", rl.RequestsPerSecond)
+		}
+		if rl.Burst < 1 {
+			return fmt.Errorf("server.rate_limit.burst doit être >= 1, reçu %d", rl.Burst)
 		}
 	}
 
