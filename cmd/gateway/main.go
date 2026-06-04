@@ -8,6 +8,7 @@ import (
 
 	"github.com/custhome/ch-api-gateway/internal/config"
 	"github.com/custhome/ch-api-gateway/internal/health"
+	"github.com/custhome/ch-api-gateway/internal/proxy"
 )
 
 func main() {
@@ -25,8 +26,15 @@ func main() {
 		log.Printf("  route %s -> %s", r.PathPrefix, r.DestinationURL)
 	}
 
+	// US-02 : le routeur reverse proxy traite tout le trafic ;
+	// /health reste servi en direct par le gateway.
+	router, err := proxy.NewRouter(cfg)
+	if err != nil {
+		log.Fatalf("démarrage impossible: %v", err)
+	}
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /health", health.Handler)
+	mux.Handle("/", router)
 
 	addr := fmt.Sprintf(":%d", cfg.Server.Port)
 	log.Printf("API Gateway listening on %s", addr)
