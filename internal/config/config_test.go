@@ -68,6 +68,48 @@ routes:
 	}
 }
 
+func TestLoadMaxBodyBytes(t *testing.T) {
+	yaml := `
+server:
+  port: 8080
+  max_body_bytes: 1024
+routes:
+  - path_prefix: "/api/auth"
+    destination_url: "http://localhost:8081"
+`
+	cfg, err := Load(writeTempConfig(t, yaml))
+	if err != nil {
+		t.Fatalf("Load() erreur inattendue: %v", err)
+	}
+	if cfg.Server.MaxBodyBytes != 1024 {
+		t.Errorf("MaxBodyBytes = %d, want 1024", cfg.Server.MaxBodyBytes)
+	}
+}
+
+func TestLoadMaxBodyBytesDefault(t *testing.T) {
+	cfg, err := Load(writeTempConfig(t, validYAML))
+	if err != nil {
+		t.Fatalf("Load() erreur inattendue: %v", err)
+	}
+	if cfg.Server.MaxBodyBytes != DefaultMaxBodyBytes {
+		t.Errorf("MaxBodyBytes = %d, want %d", cfg.Server.MaxBodyBytes, DefaultMaxBodyBytes)
+	}
+}
+
+func TestLoadNegativeMaxBodyBytes(t *testing.T) {
+	yaml := `
+server:
+  port: 8080
+  max_body_bytes: -1
+routes:
+  - path_prefix: "/api/auth"
+    destination_url: "http://localhost:8081"
+`
+	if _, err := Load(writeTempConfig(t, yaml)); err == nil {
+		t.Fatal("Load() devrait rejeter un max_body_bytes négatif")
+	}
+}
+
 func TestLoadTimeoutSecondsDefault(t *testing.T) {
 	cfg, err := Load(writeTempConfig(t, validYAML))
 	if err != nil {

@@ -55,11 +55,15 @@ func (h *ProxyHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 func configureProxyErrorHandler(proxy *httputil.ReverseProxy) {
 	proxy.ErrorHandler = func(w http.ResponseWriter, r *http.Request, err error) {
-		if errors.Is(err, context.DeadlineExceeded) {
+		var maxBytesErr *http.MaxBytesError
+		switch {
+		case errors.Is(err, context.DeadlineExceeded):
 			http.Error(w, "Gateway Timeout", http.StatusGatewayTimeout)
-			return
+		case errors.As(err, &maxBytesErr):
+			http.Error(w, "Request Entity Too Large", http.StatusRequestEntityTooLarge)
+		default:
+			http.Error(w, "Bad Gateway", http.StatusBadGateway)
 		}
-		http.Error(w, "Bad Gateway", http.StatusBadGateway)
 	}
 }
 
