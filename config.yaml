@@ -1,0 +1,10 @@
+# Configuration statique de routage de l'API Gateway CustHome.
+# Lue une seule fois au démarrage de l'exécutable (US-01).
+server:
+  port: 8080
+
+routes:
+  - path_prefix: "/api/auth"
+    destination_url: "http://localhost:8081"
+  - path_prefix: "/api/users"
+    destination_url: "http://localhost:8082"
