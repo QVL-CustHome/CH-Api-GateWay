@@ -1,9 +1,16 @@
 package middleware
 
 import (
+	"errors"
 	"net/http"
 	"strings"
 	"time"
+)
+
+// Erreurs de validation syntaxique locale de l'en-tête Authorization (US-06).
+var (
+	ErrMissingAuthHeader = errors.New("missing authorization header")
+	ErrInvalidAuthFormat = errors.New("invalid authorization format")
 )
 
 // authTimeout borne chaque appel au service d'authentification pour ne pas
@@ -39,14 +46,16 @@ func NewAuthClient(url string) *AuthClient {
 // AuthMiddleware protège une route : le token est validé auprès du service
 // d'authentification avant tout transfert au microservice cible (US-05 / SCRUM-9).
 //
-// Scénario 2 : pas de token ou format incorrect → 401 direct, sans appel au service.
-// Scénario 1 : le service répond 200 → la requête continue vers le backend.
-// Scénario 3 : le service répond 401/403 → l'erreur est retransmise telle quelle.
-// Scénario 4 : service injoignable ou timeout → 503 Service Unavailable.
+// US-06 (Fast-Fail) : la validation syntaxique locale (extractBearerToken)
+// est exécutée en premier — en-tête absent ou mal formaté → 401 immédiat,
+// sans aucun appel réseau vers le service d'authentification.
+// US-05 : le service répond 200 → la requête continue vers le backend ;
+// 401/403 → l'erreur est retransmise telle quelle ; service injoignable
+// ou timeout → 503 Service Unavailable.
 func AuthMiddleware(authClient *AuthClient, next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		token := r.Header.Get("Authorization")
-		if !hasValidBearerFormat(token) {
+		token, err := extractBearerToken(r)
+		if err != nil {
 			http.Error(w, "Unauthorized", http.StatusUnauthorized)
 			return
 		}
@@ -56,7 +65,7 @@ func AuthMiddleware(authClient *AuthClient, next http.Handler) http.Handler {
 			http.Error(w, "Internal Server Error", http.StatusInternalServerError)
 			return
 		}
-		req.Header.Set("Authorization", token)
+		req.Header.Set("Authorization", "Bearer "+token)
 
 		resp, err := authClient.client.Do(req)
 		if err != nil {
@@ -79,9 +88,25 @@ func AuthMiddleware(authClient *AuthClient, next http.Handler) http.Handler {
 	})
 }
 
-// hasValidBearerFormat vérifie que l'en-tête Authorization est de la forme
-// "Bearer <token>" avec un token non vide.
-func hasValidBearerFormat(header string) bool {
+// extractBearerToken effectue la validation syntaxique locale de l'en-tête
+// Authorization (US-06 / SCRUM-10), sans aucun appel réseau ni regex :
+// l'en-tête doit être de la forme exacte "Bearer <token>" avec un token
+// non vide. Le token est retourné nettoyé des espaces périphériques.
+func extractBearerToken(r *http.Request) (string, error) {
+	authHeader := r.Header.Get("Authorization")
+	if authHeader == "" {
+		return "", ErrMissingAuthHeader
+	}
+
 	const prefix = "Bearer "
-	return strings.HasPrefix(header, prefix) && strings.TrimSpace(header[len(prefix):]) != ""
+	if !strings.HasPrefix(authHeader, prefix) {
+		return "", ErrInvalidAuthFormat
+	}
+
+	token := strings.TrimSpace(strings.TrimPrefix(authHeader, prefix))
+	if token == "" {
+		return "", ErrInvalidAuthFormat
+	}
+
+	return token, nil
 }
