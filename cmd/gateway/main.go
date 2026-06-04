@@ -64,6 +64,8 @@ func main() {
 
 	handler := middleware.CORSMiddleware(cfg.Server.CORS, mux)
 
+	handler = middleware.StripUntrustedHeadersMiddleware(handler)
+
 	handler = middleware.MaxBodyBytesMiddleware(cfg.Server.MaxBodyBytes, handler)
 
 	extractor, err := middleware.NewIPExtractor(cfg.Server.RateLimit.TrustedProxies)

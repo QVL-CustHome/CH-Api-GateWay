@@ -4,6 +4,7 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/google/uuid"
@@ -66,6 +67,45 @@ func TestCorrelationIDPassThrough(t *testing.T) {
 	}
 	if got := rec.Header().Get(CorrelationHeader); got != existing {
 		t.Errorf("ID renvoyé au client = %q, want %q", got, existing)
+	}
+}
+
+func TestCorrelationIDInvalidRegenerated(t *testing.T) {
+	cases := []struct {
+		name string
+		id   string
+	}{
+		{"trop long", strings.Repeat("a", 129)},
+		{"espace", "id avec espace"},
+		{"point-virgule", "id;injection"},
+		{"saut de ligne", "id\nfake-log-line"},
+		{"non ASCII", "identifiant-été"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			rec, forwardedID, contextID := serveCorrelation(t, tc.id, http.StatusOK)
+
+			if forwardedID == tc.id {
+				t.Fatalf("l'ID invalide %q a été conservé", tc.id)
+			}
+			if _, err := uuid.Parse(forwardedID); err != nil {
+				t.Errorf("l'ID régénéré %q n'est pas un UUID: %v", forwardedID, err)
+			}
+			if contextID != forwardedID {
+				t.Errorf("ID du contexte = %q, want %q", contextID, forwardedID)
+			}
+			if got := rec.Header().Get(CorrelationHeader); got != forwardedID {
+				t.Errorf("ID renvoyé au client = %q, want %q", got, forwardedID)
+			}
+		})
+	}
+}
+
+func TestCorrelationIDMaxLengthAccepted(t *testing.T) {
+	id := strings.Repeat("a", 128)
+	_, forwardedID, _ := serveCorrelation(t, id, http.StatusOK)
+	if forwardedID != id {
+		t.Errorf("un ID de 128 caractères valides doit être conservé")
 	}
 }
 
