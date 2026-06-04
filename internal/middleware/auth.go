@@ -63,6 +63,9 @@ func AuthMiddleware(authClient *AuthClient, next http.Handler) http.Handler {
 			return
 		}
 		req.Header.Set("Authorization", "Bearer "+token)
+		if correlationID := r.Header.Get(CorrelationHeader); correlationID != "" {
+			req.Header.Set(CorrelationHeader, correlationID)
+		}
 
 		resp, err := authClient.client.Do(req)
 		if err != nil {

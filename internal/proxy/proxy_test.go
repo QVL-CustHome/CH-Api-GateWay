@@ -378,6 +378,31 @@ func TestRouterAppliesConfiguredTimeout(t *testing.T) {
 	}
 }
 
+func TestPublicRouteStripsForgedUserHeaders(t *testing.T) {
+	backend, captured := newBackend(t, http.StatusOK, "ok")
+	router := newGatewayRouter(t, []config.RouteConfig{
+		{PathPrefix: "/api/public", DestinationURL: backend.URL},
+	})
+	gateway := httptest.NewServer(middleware.StripUntrustedHeadersMiddleware(router))
+	t.Cleanup(gateway.Close)
+
+	req, _ := http.NewRequest(http.MethodGet, gateway.URL+"/api/public/info", nil)
+	req.Header.Set(middleware.HeaderUserID, "admin-forge")
+	req.Header.Set(middleware.HeaderUserRole, "super-admin")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("requête: %v", err)
+	}
+	resp.Body.Close()
+
+	if got := captured.Header.Get(middleware.HeaderUserID); got != "" {
+		t.Errorf("le backend public a reçu X-User-Id = %q, want supprimé", got)
+	}
+	if got := captured.Header.Get(middleware.HeaderUserRole); got != "" {
+		t.Errorf("le backend public a reçu X-User-Role = %q, want supprimé", got)
+	}
+}
+
 func TestProxyOversizedChunkedBodyReturns413(t *testing.T) {
 	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		io.Copy(io.Discard, r.Body)
