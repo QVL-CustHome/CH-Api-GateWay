@@ -28,6 +28,7 @@ type RateLimiter struct {
 	extractor *IPExtractor
 	exempt    map[string]bool
 	done      chan struct{}
+	stopOnce  sync.Once
 }
 
 func NewRateLimiter(requestsPerSecond float64, burst int, extractor *IPExtractor, exemptPaths ...string) *RateLimiter {
@@ -54,7 +55,9 @@ func newRateLimiter(r rate.Limit, b int, ttl, interval time.Duration, extractor 
 }
 
 func (rl *RateLimiter) Stop() {
-	close(rl.done)
+	rl.stopOnce.Do(func() {
+		close(rl.done)
+	})
 }
 
 func (rl *RateLimiter) getVisitor(ip string) *rate.Limiter {
@@ -107,7 +110,11 @@ func (rl *RateLimiter) Middleware(next http.Handler) http.Handler {
 			next.ServeHTTP(w, r)
 			return
 		}
-		if !rl.getVisitor(rl.extractor.ClientIP(r)).Allow() {
+		ip := ClientIPFromContext(r.Context())
+		if ip == "" {
+			ip = rl.extractor.ClientIP(r)
+		}
+		if !rl.getVisitor(ip).Allow() {
 			http.Error(w, "Too Many Requests", http.StatusTooManyRequests)
 			return
 		}

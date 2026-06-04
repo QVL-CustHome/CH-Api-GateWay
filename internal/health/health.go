@@ -15,5 +15,5 @@ func Check() Status {
 
 func Handler(w http.ResponseWriter, _ *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(Check())
+	_ = json.NewEncoder(w).Encode(Check())
 }

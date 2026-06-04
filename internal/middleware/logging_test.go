@@ -29,7 +29,7 @@ func serveLogging(t *testing.T, handler http.HandlerFunc, correlationIn string) 
 	var buf bytes.Buffer
 	logger := slog.New(slog.NewJSONHandler(&buf, nil))
 
-	chain := CorrelationIDMiddleware(LoggingMiddleware(logger, newExtractor(t), handler))
+	chain := CorrelationIDMiddleware(LoggingMiddleware(logger, handler))
 
 	req := httptest.NewRequest(http.MethodPost, "/api/users/42?fields=name", nil)
 	req.RemoteAddr = "203.0.113.7:54321"
@@ -119,11 +119,34 @@ func TestResponseRecorderAccumulatesSize(t *testing.T) {
 	}
 }
 
+func TestAccessLogUsesClientIPFromContext(t *testing.T) {
+	var buf bytes.Buffer
+	logger := slog.New(slog.NewJSONHandler(&buf, nil))
+	extractor := newExtractor(t, "10.0.0.1")
+
+	chain := extractor.Middleware(LoggingMiddleware(logger, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	})))
+
+	req := httptest.NewRequest(http.MethodGet, "/api/users", nil)
+	req.RemoteAddr = "10.0.0.1:80"
+	req.Header.Set("X-Forwarded-For", "198.51.100.9")
+	chain.ServeHTTP(httptest.NewRecorder(), req)
+
+	var entry accessLog
+	if err := json.Unmarshal(buf.Bytes(), &entry); err != nil {
+		t.Fatalf("log JSON invalide: %v", err)
+	}
+	if entry.IP != "198.51.100.9" {
+		t.Errorf("ip = %q, want 198.51.100.9 (résolue via le contexte)", entry.IP)
+	}
+}
+
 func TestAccessLogSuppressedAboveInfoLevel(t *testing.T) {
 	var buf bytes.Buffer
 	logger := slog.New(slog.NewJSONHandler(&buf, &slog.HandlerOptions{Level: slog.LevelWarn}))
 
-	chain := LoggingMiddleware(logger, newExtractor(t), http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+	chain := LoggingMiddleware(logger, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	}))
 	chain.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, "/api/users", nil))

@@ -139,6 +139,38 @@ func TestRateLimitExemptPath(t *testing.T) {
 	}
 }
 
+func TestRateLimitUsesClientIPFromContext(t *testing.T) {
+	rl := NewRateLimiter(1, 2, newExtractor(t))
+	t.Cleanup(rl.Stop)
+	extractor := newExtractor(t, "10.0.0.1")
+
+	handler := extractor.Middleware(rl.Middleware(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	})))
+
+	for _, clientIP := range []string{"198.51.100.9", "203.0.113.50"} {
+		req := httptest.NewRequest(http.MethodGet, "/api/users", nil)
+		req.RemoteAddr = "10.0.0.1:80"
+		req.Header.Set("X-Forwarded-For", clientIP)
+		rec := httptest.NewRecorder()
+		handler.ServeHTTP(rec, req)
+		if rec.Code != http.StatusOK {
+			t.Errorf("statut = %d pour %s, want 200", rec.Code, clientIP)
+		}
+	}
+
+	if got := rl.visitorCount(); got != 2 {
+		t.Errorf("visitorCount = %d, want 2 (un bucket par IP du contexte)", got)
+	}
+}
+
+func TestStopIsIdempotent(t *testing.T) {
+	rl := NewRateLimiter(1, 1, newExtractor(t))
+
+	rl.Stop()
+	rl.Stop()
+}
+
 func TestRemoveStaleVisitors(t *testing.T) {
 	rl := newRateLimiter(rate.Limit(10), 20, 3*time.Minute, time.Minute, newExtractor(t))
 	t.Cleanup(rl.Stop)

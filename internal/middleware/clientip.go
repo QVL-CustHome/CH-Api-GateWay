@@ -1,12 +1,15 @@
 package middleware
 
 import (
+	"context"
 	"fmt"
 	"net"
 	"net/http"
 	"net/netip"
 	"strings"
 )
+
+const clientIPKey contextKey = "client_ip"
 
 type IPExtractor struct {
 	trusted []netip.Prefix
@@ -69,4 +72,16 @@ func (e *IPExtractor) ClientIP(r *http.Request) string {
 		}
 	}
 	return remote
+}
+
+func (e *IPExtractor) Middleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		ctx := context.WithValue(r.Context(), clientIPKey, e.ClientIP(r))
+		next.ServeHTTP(w, r.WithContext(ctx))
+	})
+}
+
+func ClientIPFromContext(ctx context.Context) string {
+	ip, _ := ctx.Value(clientIPKey).(string)
+	return ip
 }

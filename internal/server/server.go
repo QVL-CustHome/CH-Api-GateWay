@@ -30,8 +30,15 @@ func Run(ctx context.Context, srv *http.Server, shutdownGrace time.Duration, onS
 		errCh <- srv.ListenAndServe()
 	}()
 
+	runHooks := func() {
+		for _, f := range onShutdown {
+			f()
+		}
+	}
+
 	select {
 	case err := <-errCh:
+		runHooks()
 		return err
 	case <-ctx.Done():
 	}
@@ -40,8 +47,6 @@ func Run(ctx context.Context, srv *http.Server, shutdownGrace time.Duration, onS
 	defer cancel()
 	err := srv.Shutdown(shutdownCtx)
 
-	for _, f := range onShutdown {
-		f()
-	}
+	runHooks()
 	return err
 }

@@ -58,8 +58,12 @@ func TestRunGracefulShutdown(t *testing.T) {
 func TestRunListenError(t *testing.T) {
 	srv := New("127.0.0.1:99999", http.NewServeMux(), time.Second)
 
-	err := Run(context.Background(), srv, time.Second)
+	hookCalled := false
+	err := Run(context.Background(), srv, time.Second, func() { hookCalled = true })
 	if err == nil {
 		t.Fatal("Run() devrait retourner l'erreur d'écoute")
+	}
+	if !hookCalled {
+		t.Error("les hooks doivent aussi s'exécuter sur une erreur d'écoute")
 	}
 }

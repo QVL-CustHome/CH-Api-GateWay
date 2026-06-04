@@ -378,6 +378,44 @@ func TestRouterAppliesConfiguredTimeout(t *testing.T) {
 	}
 }
 
+func TestStripPrefixWithDestinationBasePath(t *testing.T) {
+	backend, captured := newBackend(t, http.StatusOK, "ok")
+	router := newGatewayRouter(t, []config.RouteConfig{
+		{PathPrefix: "/api/users", DestinationURL: backend.URL + "/v1", StripPrefix: true},
+	})
+	gateway := httptest.NewServer(router)
+	t.Cleanup(gateway.Close)
+
+	resp, err := http.Get(gateway.URL + "/api/users/profile")
+	if err != nil {
+		t.Fatalf("requête: %v", err)
+	}
+	resp.Body.Close()
+
+	if captured.Path != "/v1/profile" {
+		t.Errorf("path reçu par le backend = %q, want /v1/profile", captured.Path)
+	}
+}
+
+func TestNoStripPrefixWithDestinationBasePath(t *testing.T) {
+	backend, captured := newBackend(t, http.StatusOK, "ok")
+	router := newGatewayRouter(t, []config.RouteConfig{
+		{PathPrefix: "/api/users", DestinationURL: backend.URL + "/v1"},
+	})
+	gateway := httptest.NewServer(router)
+	t.Cleanup(gateway.Close)
+
+	resp, err := http.Get(gateway.URL + "/api/users/profile")
+	if err != nil {
+		t.Fatalf("requête: %v", err)
+	}
+	resp.Body.Close()
+
+	if captured.Path != "/v1/api/users/profile" {
+		t.Errorf("path reçu par le backend = %q, want /v1/api/users/profile", captured.Path)
+	}
+}
+
 func TestProxySetsXForwardedHeaders(t *testing.T) {
 	backend, captured := newBackend(t, http.StatusOK, "ok")
 	router := newGatewayRouter(t, []config.RouteConfig{
