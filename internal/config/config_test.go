@@ -51,6 +51,49 @@ func TestLoadValidFile(t *testing.T) {
 	}
 }
 
+// US-09 — timeout_seconds est parsé ; défaut appliqué si absent ; négatif rejeté.
+func TestLoadTimeoutSeconds(t *testing.T) {
+	yaml := `
+server:
+  port: 8080
+  timeout_seconds: 7
+routes:
+  - path_prefix: "/api/auth"
+    destination_url: "http://localhost:8081"
+`
+	cfg, err := Load(writeTempConfig(t, yaml))
+	if err != nil {
+		t.Fatalf("Load() erreur inattendue: %v", err)
+	}
+	if cfg.Server.TimeoutSeconds != 7 {
+		t.Errorf("TimeoutSeconds = %d, want 7", cfg.Server.TimeoutSeconds)
+	}
+}
+
+func TestLoadTimeoutSecondsDefault(t *testing.T) {
+	cfg, err := Load(writeTempConfig(t, validYAML))
+	if err != nil {
+		t.Fatalf("Load() erreur inattendue: %v", err)
+	}
+	if cfg.Server.TimeoutSeconds != DefaultTimeoutSeconds {
+		t.Errorf("TimeoutSeconds = %d, want défaut %d", cfg.Server.TimeoutSeconds, DefaultTimeoutSeconds)
+	}
+}
+
+func TestLoadNegativeTimeoutSeconds(t *testing.T) {
+	yaml := `
+server:
+  port: 8080
+  timeout_seconds: -3
+routes:
+  - path_prefix: "/api/auth"
+    destination_url: "http://localhost:8081"
+`
+	if _, err := Load(writeTempConfig(t, yaml)); err == nil {
+		t.Fatal("Load() devrait rejeter un timeout_seconds négatif")
+	}
+}
+
 // US-08 — le bloc server.rate_limit est parsé et validé.
 func TestLoadRateLimitConfig(t *testing.T) {
 	yaml := `

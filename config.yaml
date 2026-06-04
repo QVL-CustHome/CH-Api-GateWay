@@ -2,6 +2,8 @@
 # Lue une seule fois au démarrage de l'exécutable (US-01).
 server:
   port: 8080
+  # US-09 : délai d'attente maximum d'une réponse backend (504 au-delà).
+  timeout_seconds: 5
   # US-08 : limitation de trafic par IP (Token Bucket).
   rate_limit:
     enabled: true

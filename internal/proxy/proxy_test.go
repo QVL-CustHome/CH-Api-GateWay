@@ -6,6 +6,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/custhome/ch-api-gateway/internal/config"
 )
@@ -51,6 +52,7 @@ func newGatewayRouter(t *testing.T, routes []config.RouteConfig) http.Handler {
 	t.Helper()
 	cfg := &config.GatewayConfig{Routes: routes}
 	cfg.Server.Port = 8080
+	cfg.Server.TimeoutSeconds = config.DefaultTimeoutSeconds
 	router, err := NewRouter(cfg, nil)
 	if err != nil {
 		t.Fatalf("NewRouter() erreur inattendue: %v", err)
@@ -270,6 +272,130 @@ func TestStripPrefixDisabledKeepsFullPath(t *testing.T) {
 
 	if captured.Path != "/api/auth/login" {
 		t.Errorf("path reçu par le backend = %q, want /api/auth/login", captured.Path)
+	}
+}
+
+// US-09 Scénario 1 — Le backend répond avant le timeout : réponse transmise
+// normalement.
+func TestTimeoutFastBackendPasses(t *testing.T) {
+	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		time.Sleep(20 * time.Millisecond)
+		w.WriteHeader(http.StatusOK)
+		io.WriteString(w, "ok")
+	}))
+	t.Cleanup(backend.Close)
+
+	proxyHandler, err := NewProxyHandler(config.RouteConfig{PathPrefix: "/api/users", DestinationURL: backend.URL})
+	if err != nil {
+		t.Fatalf("NewProxyHandler(): %v", err)
+	}
+	gateway := httptest.NewServer(TimeoutMiddleware(500*time.Millisecond, proxyHandler))
+	t.Cleanup(gateway.Close)
+
+	resp, err := http.Get(gateway.URL + "/api/users")
+	if err != nil {
+		t.Fatalf("requête: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		t.Errorf("statut = %d, want 200", resp.StatusCode)
+	}
+	body, _ := io.ReadAll(resp.Body)
+	if string(body) != "ok" {
+		t.Errorf("body = %q, want ok", string(body))
+	}
+}
+
+// US-09 Scénario 2 — Le backend dépasse le timeout : connexion coupée, 504.
+func TestTimeoutSlowBackendReturns504(t *testing.T) {
+	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		time.Sleep(500 * time.Millisecond) // bien au-delà du timeout
+		w.WriteHeader(http.StatusOK)
+	}))
+	t.Cleanup(backend.Close)
+
+	proxyHandler, err := NewProxyHandler(config.RouteConfig{PathPrefix: "/api/users", DestinationURL: backend.URL})
+	if err != nil {
+		t.Fatalf("NewProxyHandler(): %v", err)
+	}
+	gateway := httptest.NewServer(TimeoutMiddleware(100*time.Millisecond, proxyHandler))
+	t.Cleanup(gateway.Close)
+
+	start := time.Now()
+	resp, err := http.Get(gateway.URL + "/api/users")
+	if err != nil {
+		t.Fatalf("requête: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusGatewayTimeout {
+		t.Errorf("statut = %d, want 504", resp.StatusCode)
+	}
+	// Le client est libéré dès l'échéance, sans attendre la fin du backend.
+	if elapsed := time.Since(start); elapsed >= 450*time.Millisecond {
+		t.Errorf("réponse en %v : le client n'a pas été libéré à l'échéance du timeout", elapsed)
+	}
+}
+
+// US-09 Scénario 3 — Backend éteint (connexion refusée) : 502 immédiat,
+// sans attendre le timeout.
+func TestBackendDownReturns502Immediately(t *testing.T) {
+	backend := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}))
+	backendURL := backend.URL
+	backend.Close() // plus personne n'écoute
+
+	router := newGatewayRouter(t, []config.RouteConfig{
+		{PathPrefix: "/api/users", DestinationURL: backendURL},
+	})
+	gateway := httptest.NewServer(router)
+	t.Cleanup(gateway.Close)
+
+	start := time.Now()
+	resp, err := http.Get(gateway.URL + "/api/users")
+	if err != nil {
+		t.Fatalf("requête: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusBadGateway {
+		t.Errorf("statut = %d, want 502", resp.StatusCode)
+	}
+	// Bien en-deçà du timeout global de 5s : l'échec est immédiat.
+	if elapsed := time.Since(start); elapsed >= 2*time.Second {
+		t.Errorf("réponse en %v : le 502 aurait dû être immédiat", elapsed)
+	}
+}
+
+// US-09 — Intégration via NewRouter : le timeout configuré (1s) s'applique
+// au pipeline complet de la route.
+func TestRouterAppliesConfiguredTimeout(t *testing.T) {
+	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		time.Sleep(1500 * time.Millisecond)
+		w.WriteHeader(http.StatusOK)
+	}))
+	t.Cleanup(backend.Close)
+
+	cfg := &config.GatewayConfig{Routes: []config.RouteConfig{
+		{PathPrefix: "/api/users", DestinationURL: backend.URL},
+	}}
+	cfg.Server.Port = 8080
+	cfg.Server.TimeoutSeconds = 1
+	router, err := NewRouter(cfg, nil)
+	if err != nil {
+		t.Fatalf("NewRouter(): %v", err)
+	}
+	gateway := httptest.NewServer(router)
+	t.Cleanup(gateway.Close)
+
+	resp, err := http.Get(gateway.URL + "/api/users")
+	if err != nil {
+		t.Fatalf("requête: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusGatewayTimeout {
+		t.Errorf("statut = %d, want 504", resp.StatusCode)
 	}
 }
 
