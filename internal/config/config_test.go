@@ -1,6 +1,7 @@
 package config
 
 import (
+	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
@@ -91,6 +92,61 @@ routes:
 `
 	if _, err := Load(writeTempConfig(t, yaml)); err == nil {
 		t.Fatal("Load() devrait rejeter un timeout_seconds négatif")
+	}
+}
+
+// US-11 — log_level est parsé (insensible à la casse), défaut INFO, mappé sur slog.
+func TestLoadLogLevel(t *testing.T) {
+	cases := []struct {
+		name      string
+		yamlLevel string // vide = clé absente
+		want      string
+		wantSlog  slog.Level
+	}{
+		{"défaut si absent", "", "INFO", slog.LevelInfo},
+		{"DEBUG", "DEBUG", "DEBUG", slog.LevelDebug},
+		{"minuscules normalisées", "warn", "WARN", slog.LevelWarn},
+		{"ERROR", "ERROR", "ERROR", slog.LevelError},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			level := ""
+			if tc.yamlLevel != "" {
+				level = "\n  log_level: \"" + tc.yamlLevel + "\""
+			}
+			yaml := `
+server:
+  port: 8080` + level + `
+routes:
+  - path_prefix: "/api/auth"
+    destination_url: "http://localhost:8081"
+`
+			cfg, err := Load(writeTempConfig(t, yaml))
+			if err != nil {
+				t.Fatalf("Load() erreur inattendue: %v", err)
+			}
+			if cfg.Server.LogLevel != tc.want {
+				t.Errorf("LogLevel = %q, want %q", cfg.Server.LogLevel, tc.want)
+			}
+			if got := cfg.SlogLevel(); got != tc.wantSlog {
+				t.Errorf("SlogLevel() = %v, want %v", got, tc.wantSlog)
+			}
+		})
+	}
+}
+
+// US-11 — niveau de log inconnu : configuration rejetée.
+func TestLoadInvalidLogLevel(t *testing.T) {
+	yaml := `
+server:
+  port: 8080
+  log_level: "VERBOSE"
+routes:
+  - path_prefix: "/api/auth"
+    destination_url: "http://localhost:8081"
+`
+	if _, err := Load(writeTempConfig(t, yaml)); err == nil {
+		t.Fatal("Load() devrait rejeter un log_level inconnu")
 	}
 }
 
