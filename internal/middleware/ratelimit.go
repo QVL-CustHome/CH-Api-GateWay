@@ -1,9 +1,7 @@
 package middleware
 
 import (
-	"net"
 	"net/http"
-	"strings"
 	"sync"
 	"time"
 
@@ -21,27 +19,35 @@ type visitor struct {
 }
 
 type RateLimiter struct {
-	visitors map[string]*visitor
-	mu       sync.RWMutex
-	rate     rate.Limit
-	burst    int
-	ttl      time.Duration
-	interval time.Duration
-	done     chan struct{}
+	visitors  map[string]*visitor
+	mu        sync.RWMutex
+	rate      rate.Limit
+	burst     int
+	ttl       time.Duration
+	interval  time.Duration
+	extractor *IPExtractor
+	exempt    map[string]bool
+	done      chan struct{}
 }
 
-func NewRateLimiter(requestsPerSecond float64, burst int) *RateLimiter {
-	return newRateLimiter(rate.Limit(requestsPerSecond), burst, visitorTTL, cleanupInterval)
+func NewRateLimiter(requestsPerSecond float64, burst int, extractor *IPExtractor, exemptPaths ...string) *RateLimiter {
+	return newRateLimiter(rate.Limit(requestsPerSecond), burst, visitorTTL, cleanupInterval, extractor, exemptPaths...)
 }
 
-func newRateLimiter(r rate.Limit, b int, ttl, interval time.Duration) *RateLimiter {
+func newRateLimiter(r rate.Limit, b int, ttl, interval time.Duration, extractor *IPExtractor, exemptPaths ...string) *RateLimiter {
+	exempt := make(map[string]bool, len(exemptPaths))
+	for _, p := range exemptPaths {
+		exempt[p] = true
+	}
 	rl := &RateLimiter{
-		visitors: make(map[string]*visitor),
-		rate:     r,
-		burst:    b,
-		ttl:      ttl,
-		interval: interval,
-		done:     make(chan struct{}),
+		visitors:  make(map[string]*visitor),
+		rate:      r,
+		burst:     b,
+		ttl:       ttl,
+		interval:  interval,
+		extractor: extractor,
+		exempt:    exempt,
+		done:      make(chan struct{}),
 	}
 	go rl.cleanupVisitors()
 	return rl
@@ -95,21 +101,13 @@ func (rl *RateLimiter) visitorCount() int {
 	return len(rl.visitors)
 }
 
-func extractIP(r *http.Request) string {
-	if forwarded := r.Header.Get("X-Forwarded-For"); forwarded != "" {
-		return strings.TrimSpace(strings.Split(forwarded, ",")[0])
-	}
-	host, _, err := net.SplitHostPort(r.RemoteAddr)
-	if err != nil {
-
-		return r.RemoteAddr
-	}
-	return host
-}
-
 func (rl *RateLimiter) Middleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if !rl.getVisitor(extractIP(r)).Allow() {
+		if rl.exempt[r.URL.Path] {
+			next.ServeHTTP(w, r)
+			return
+		}
+		if !rl.getVisitor(rl.extractor.ClientIP(r)).Allow() {
 			http.Error(w, "Too Many Requests", http.StatusTooManyRequests)
 			return
 		}

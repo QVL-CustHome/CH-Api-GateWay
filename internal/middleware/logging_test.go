@@ -29,7 +29,7 @@ func serveLogging(t *testing.T, handler http.HandlerFunc, correlationIn string) 
 	var buf bytes.Buffer
 	logger := slog.New(slog.NewJSONHandler(&buf, nil))
 
-	chain := CorrelationIDMiddleware(LoggingMiddleware(logger, handler))
+	chain := CorrelationIDMiddleware(LoggingMiddleware(logger, newExtractor(t), handler))
 
 	req := httptest.NewRequest(http.MethodPost, "/api/users/42?fields=name", nil)
 	req.RemoteAddr = "203.0.113.7:54321"
@@ -123,7 +123,7 @@ func TestAccessLogSuppressedAboveInfoLevel(t *testing.T) {
 	var buf bytes.Buffer
 	logger := slog.New(slog.NewJSONHandler(&buf, &slog.HandlerOptions{Level: slog.LevelWarn}))
 
-	chain := LoggingMiddleware(logger, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+	chain := LoggingMiddleware(logger, newExtractor(t), http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	}))
 	chain.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, "/api/users", nil))

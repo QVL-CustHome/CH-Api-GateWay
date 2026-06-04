@@ -13,6 +13,9 @@ server:
     enabled: true
     requests_per_second: 10
     burst: 20
+    # US-13 : X-Forwarded-For n'est honoré que derrière ces proxies (IP ou CIDR).
+    # Vide = seule l'adresse TCP (RemoteAddr) fait foi.
+    trusted_proxies: []
   cors:
     allowed_origins:
       - "http://localhost:3000"

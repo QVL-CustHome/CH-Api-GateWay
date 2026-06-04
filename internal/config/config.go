@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"fmt"
 	"log/slog"
+	"net/netip"
 	"net/url"
 	"os"
 	"strings"
@@ -31,9 +32,10 @@ type CORSConfig struct {
 }
 
 type RateLimitConfig struct {
-	Enabled           bool    `yaml:"enabled" json:"enabled"`
-	RequestsPerSecond float64 `yaml:"requests_per_second" json:"requests_per_second"`
-	Burst             int     `yaml:"burst" json:"burst"`
+	Enabled           bool     `yaml:"enabled" json:"enabled"`
+	RequestsPerSecond float64  `yaml:"requests_per_second" json:"requests_per_second"`
+	Burst             int      `yaml:"burst" json:"burst"`
+	TrustedProxies    []string `yaml:"trusted_proxies" json:"trusted_proxies"`
 }
 
 type GatewayConfig struct {
@@ -115,6 +117,13 @@ func (c *GatewayConfig) validate() error {
 		}
 		if rl.Burst < 1 {
 			return fmt.Errorf("server.rate_limit.burst doit être >= 1, reçu %d", rl.Burst)
+		}
+	}
+	for _, entry := range c.Server.RateLimit.TrustedProxies {
+		if _, errPrefix := netip.ParsePrefix(entry); errPrefix != nil {
+			if _, errAddr := netip.ParseAddr(entry); errAddr != nil {
+				return fmt.Errorf("server.rate_limit.trusted_proxies: %q n'est ni une IP ni un CIDR valide", entry)
+			}
 		}
 	}
 

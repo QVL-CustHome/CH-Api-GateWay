@@ -44,7 +44,7 @@ func fireRequests(t *testing.T, rl *RateLimiter, n int, remoteAddr, forwardedFor
 }
 
 func TestRateLimitUnderQuota(t *testing.T) {
-	rl := NewRateLimiter(10, 20)
+	rl := NewRateLimiter(10, 20, newExtractor(t))
 	t.Cleanup(rl.Stop)
 
 	passed, rejected := fireRequests(t, rl, 5, "203.0.113.7:54321", "")
@@ -55,7 +55,7 @@ func TestRateLimitUnderQuota(t *testing.T) {
 }
 
 func TestRateLimitThrottlingOverQuota(t *testing.T) {
-	rl := NewRateLimiter(10, 20)
+	rl := NewRateLimiter(10, 20, newExtractor(t))
 	t.Cleanup(rl.Stop)
 
 	passed, rejected := fireRequests(t, rl, 25, "203.0.113.7:54321", "")
@@ -72,7 +72,7 @@ func TestRateLimitThrottlingOverQuota(t *testing.T) {
 }
 
 func TestRateLimitIsPerIP(t *testing.T) {
-	rl := NewRateLimiter(1, 2)
+	rl := NewRateLimiter(1, 2, newExtractor(t))
 	t.Cleanup(rl.Stop)
 
 	fireRequests(t, rl, 5, "203.0.113.7:1111", "")
@@ -83,36 +83,27 @@ func TestRateLimitIsPerIP(t *testing.T) {
 	}
 }
 
-func TestExtractIP(t *testing.T) {
-	cases := []struct {
-		name         string
-		remoteAddr   string
-		forwardedFor string
-		want         string
-	}{
-		{"RemoteAddr simple", "203.0.113.7:54321", "", "203.0.113.7"},
-		{"RemoteAddr sans port", "203.0.113.7", "", "203.0.113.7"},
-		{"X-Forwarded-For simple", "10.0.0.1:80", "198.51.100.9", "198.51.100.9"},
-		{"X-Forwarded-For en chaîne (client, proxies)", "10.0.0.1:80", "198.51.100.9, 10.0.0.2, 10.0.0.3", "198.51.100.9"},
-		{"X-Forwarded-For avec espaces", "10.0.0.1:80", "  198.51.100.9 , 10.0.0.2", "198.51.100.9"},
-		{"IPv6 RemoteAddr", "[2001:db8::1]:443", "", "2001:db8::1"},
+func TestRateLimitIgnoresSpoofedForwardedFor(t *testing.T) {
+	rl := NewRateLimiter(1, 2, newExtractor(t))
+	t.Cleanup(rl.Stop)
+
+	attacker := "203.0.113.7:1111"
+	total := 0
+	for i := 0; i < 6; i++ {
+		_, rejected := fireRequests(t, rl, 1, attacker, "1.2.3."+string(rune('0'+i)))
+		total += rejected
 	}
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			req := httptest.NewRequest(http.MethodGet, "/", nil)
-			req.RemoteAddr = tc.remoteAddr
-			if tc.forwardedFor != "" {
-				req.Header.Set("X-Forwarded-For", tc.forwardedFor)
-			}
-			if got := extractIP(req); got != tc.want {
-				t.Errorf("extractIP() = %q, want %q", got, tc.want)
-			}
-		})
+
+	if total == 0 {
+		t.Error("un XFF différent par requête ne doit pas contourner le rate limiting")
+	}
+	if got := rl.visitorCount(); got != 1 {
+		t.Errorf("visitorCount = %d, want 1 (un seul bucket pour l'attaquant)", got)
 	}
 }
 
-func TestRateLimitUsesForwardedClientIP(t *testing.T) {
-	rl := NewRateLimiter(1, 2)
+func TestRateLimitUsesForwardedClientIPBehindTrustedProxy(t *testing.T) {
+	rl := NewRateLimiter(1, 2, newExtractor(t, "10.0.0.1"))
 	t.Cleanup(rl.Stop)
 
 	lbAddr := "10.0.0.1:80"
@@ -128,8 +119,28 @@ func TestRateLimitUsesForwardedClientIP(t *testing.T) {
 	}
 }
 
+func TestRateLimitExemptPath(t *testing.T) {
+	rl := NewRateLimiter(1, 1, newExtractor(t), "/health")
+	t.Cleanup(rl.Stop)
+
+	fireRequests(t, rl, 3, "203.0.113.7:1111", "")
+
+	handler := rl.Middleware(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	for i := 0; i < 5; i++ {
+		req := httptest.NewRequest(http.MethodGet, "/health", nil)
+		req.RemoteAddr = "203.0.113.7:1111"
+		rec := httptest.NewRecorder()
+		handler.ServeHTTP(rec, req)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("statut /health = %d (itération %d), want 200 même quota épuisé", rec.Code, i)
+		}
+	}
+}
+
 func TestRemoveStaleVisitors(t *testing.T) {
-	rl := newRateLimiter(rate.Limit(10), 20, 3*time.Minute, time.Minute)
+	rl := newRateLimiter(rate.Limit(10), 20, 3*time.Minute, time.Minute, newExtractor(t))
 	t.Cleanup(rl.Stop)
 
 	rl.getVisitor("203.0.113.7")
@@ -155,8 +166,7 @@ func TestRemoveStaleVisitors(t *testing.T) {
 }
 
 func TestCleanupGoroutine(t *testing.T) {
-
-	rl := newRateLimiter(rate.Limit(10), 20, 30*time.Millisecond, 10*time.Millisecond)
+	rl := newRateLimiter(rate.Limit(10), 20, 30*time.Millisecond, 10*time.Millisecond, newExtractor(t))
 	t.Cleanup(rl.Stop)
 
 	rl.getVisitor("203.0.113.7")
