@@ -59,6 +59,10 @@ func main() {
 		log.Printf("rate limiting actif: %.0f req/s, burst %d", cfg.Server.RateLimit.RequestsPerSecond, cfg.Server.RateLimit.Burst)
 	}
 
+	// US-10 : le Correlation ID est initié tout en haut de la chaîne,
+	// avant même le rate limiting, pour tracer y compris les requêtes rejetées.
+	handler = middleware.CorrelationIDMiddleware(handler)
+
 	addr := fmt.Sprintf(":%d", cfg.Server.Port)
 	log.Printf("API Gateway listening on %s", addr)
 	if err := http.ListenAndServe(addr, handler); err != nil {
