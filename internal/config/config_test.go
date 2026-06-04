@@ -51,6 +51,30 @@ func TestLoadValidFile(t *testing.T) {
 	}
 }
 
+// US-03 — le champ strip_prefix est parsé, et vaut false par défaut.
+func TestLoadStripPrefix(t *testing.T) {
+	yaml := `
+server:
+  port: 8080
+routes:
+  - path_prefix: "/api/auth"
+    destination_url: "http://localhost:8081"
+    strip_prefix: true
+  - path_prefix: "/api/users"
+    destination_url: "http://localhost:8082"
+`
+	cfg, err := Load(writeTempConfig(t, yaml))
+	if err != nil {
+		t.Fatalf("Load() erreur inattendue: %v", err)
+	}
+	if !cfg.Routes[0].StripPrefix {
+		t.Error("Routes[0].StripPrefix = false, want true")
+	}
+	if cfg.Routes[1].StripPrefix {
+		t.Error("Routes[1].StripPrefix = true, want false (défaut)")
+	}
+}
+
 // Scénario 2 — Fichier introuvable.
 func TestLoadFileNotFound(t *testing.T) {
 	_, err := Load(filepath.Join(t.TempDir(), "inexistant.yaml"))

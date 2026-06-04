@@ -6,5 +6,7 @@ server:
 routes:
   - path_prefix: "/api/auth"
     destination_url: "http://localhost:8081"
+    strip_prefix: true
   - path_prefix: "/api/users"
     destination_url: "http://localhost:8082"
+    strip_prefix: false

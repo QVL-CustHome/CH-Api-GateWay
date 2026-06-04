@@ -13,9 +13,12 @@ import (
 )
 
 // RouteConfig associe un préfixe de chemin exposé à l'URL d'un microservice cible.
+// StripPrefix (US-03) supprime le préfixe de routage de l'URL avant transfert
+// au backend ; désactivé par défaut.
 type RouteConfig struct {
 	PathPrefix     string `yaml:"path_prefix" json:"path_prefix"`
 	DestinationURL string `yaml:"destination_url" json:"destination_url"`
+	StripPrefix    bool   `yaml:"strip_prefix" json:"strip_prefix"`
 }
 
 // GatewayConfig est la configuration complète du gateway, chargée une seule
