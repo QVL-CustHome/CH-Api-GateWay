@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/custhome/ch-api-gateway/internal/config"
+	"github.com/custhome/ch-api-gateway/internal/middleware"
 )
 
 type capturedRequest struct {
@@ -374,6 +375,30 @@ func TestRouterAppliesConfiguredTimeout(t *testing.T) {
 
 	if resp.StatusCode != http.StatusGatewayTimeout {
 		t.Errorf("statut = %d, want 504", resp.StatusCode)
+	}
+}
+
+func TestProxyOversizedChunkedBodyReturns413(t *testing.T) {
+	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		io.Copy(io.Discard, r.Body)
+		w.WriteHeader(http.StatusOK)
+	}))
+	t.Cleanup(backend.Close)
+	router := newGatewayRouter(t, []config.RouteConfig{
+		{PathPrefix: "/api/users", DestinationURL: backend.URL},
+	})
+	gateway := httptest.NewServer(middleware.MaxBodyBytesMiddleware(10, router))
+	t.Cleanup(gateway.Close)
+
+	body := struct{ io.Reader }{strings.NewReader(strings.Repeat("x", 100))}
+	resp, err := http.Post(gateway.URL+"/api/users", "text/plain", body)
+	if err != nil {
+		t.Fatalf("requête: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusRequestEntityTooLarge {
+		t.Errorf("statut = %d, want 413", resp.StatusCode)
 	}
 }
 

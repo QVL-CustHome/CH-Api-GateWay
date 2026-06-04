@@ -15,6 +15,8 @@ const DefaultTimeoutSeconds = 5
 
 const DefaultLogLevel = "INFO"
 
+const DefaultMaxBodyBytes = 10 << 20
+
 type RouteConfig struct {
 	PathPrefix     string `yaml:"path_prefix" json:"path_prefix"`
 	DestinationURL string `yaml:"destination_url" json:"destination_url"`
@@ -39,6 +41,8 @@ type GatewayConfig struct {
 		Port int `yaml:"port" json:"port"`
 
 		TimeoutSeconds int `yaml:"timeout_seconds" json:"timeout_seconds"`
+
+		MaxBodyBytes int64 `yaml:"max_body_bytes" json:"max_body_bytes"`
 
 		LogLevel  string          `yaml:"log_level" json:"log_level"`
 		CORS      CORSConfig      `yaml:"cors" json:"cors"`
@@ -65,6 +69,10 @@ func Load(path string) (*GatewayConfig, error) {
 		cfg.Server.TimeoutSeconds = DefaultTimeoutSeconds
 	}
 
+	if cfg.Server.MaxBodyBytes == 0 {
+		cfg.Server.MaxBodyBytes = DefaultMaxBodyBytes
+	}
+
 	if cfg.Server.LogLevel == "" {
 		cfg.Server.LogLevel = DefaultLogLevel
 	}
@@ -82,6 +90,9 @@ func (c *GatewayConfig) validate() error {
 	}
 	if c.Server.TimeoutSeconds < 1 {
 		return fmt.Errorf("server.timeout_seconds doit être >= 1, reçu %d", c.Server.TimeoutSeconds)
+	}
+	if c.Server.MaxBodyBytes < 1 {
+		return fmt.Errorf("server.max_body_bytes doit être >= 1, reçu %d", c.Server.MaxBodyBytes)
 	}
 	switch c.Server.LogLevel {
 	case "DEBUG", "INFO", "WARN", "ERROR":
