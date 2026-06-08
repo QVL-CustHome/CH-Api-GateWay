@@ -696,6 +696,38 @@ routes:
 	}
 }
 
+// US-8.4 : la configuration livrée doit être valide et exposer la route
+// d'administration, protégée et rattachée au portail "portail_admin".
+func TestLoadShippedConfigHasAdminRoute(t *testing.T) {
+	cfg, err := Load("../../config.yaml")
+	if err != nil {
+		t.Fatalf("la configuration livrée (config.yaml) doit être valide: %v", err)
+	}
+
+	var admin *RouteConfig
+	for i := range cfg.Routes {
+		if cfg.Routes[i].PathPrefix == "/api/admin" {
+			admin = &cfg.Routes[i]
+			break
+		}
+	}
+	if admin == nil {
+		t.Fatal("la route /api/admin (portail d'administration) est absente de config.yaml")
+	}
+	if !admin.RequireAuth {
+		t.Error("/api/admin doit exiger l'authentification (require_auth)")
+	}
+	if admin.Portal != "portail_admin" {
+		t.Errorf("/api/admin portal = %q, want portail_admin", admin.Portal)
+	}
+	if !admin.StripPrefix {
+		t.Error("/api/admin doit stripper son préfixe pour atteindre /users, /roles sur l'Authenticator")
+	}
+	if admin.DestinationURL != "http://localhost:8081" {
+		t.Errorf("/api/admin destination = %q, want http://localhost:8081", admin.DestinationURL)
+	}
+}
+
 func TestLoadDuplicatePathPrefix(t *testing.T) {
 	yaml := `
 server:
