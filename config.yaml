@@ -19,6 +19,7 @@ server:
   cors:
     allowed_origins:
       - "http://localhost:3000"
+      - "http://localhost:3001"
       - "https://mon-app-front.com"
     allowed_methods:
       - "GET"
@@ -56,3 +57,11 @@ routes:
     require_auth: true
     # US-09 (sprint Api Authenticator) : portail transmis en X-Portal au /validate.
     portal: "custhome"
+  # US-8.4 : portail d'administration (CH-Portail-Admin). require_auth + rôle
+  # "admin" sur "portail_admin" résolu par l'Authenticator. strip_prefix → les
+  # appels /api/admin/users, /api/admin/roles… atteignent /users, /roles sur :8081.
+  - path_prefix: "/api/admin"
+    destination_url: "http://localhost:8081"
+    strip_prefix: true
+    require_auth: true
+    portal: "portail_admin"
