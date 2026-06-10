@@ -723,8 +723,38 @@ func TestLoadShippedConfigHasAdminRoute(t *testing.T) {
 	if !admin.StripPrefix {
 		t.Error("/api/admin doit stripper son préfixe pour atteindre /users, /roles sur l'Authenticator")
 	}
-	if admin.DestinationURL != "http://localhost:8081" {
-		t.Errorf("/api/admin destination = %q, want http://localhost:8081", admin.DestinationURL)
+	if admin.DestinationURL != "http://localhost:8181" {
+		t.Errorf("/api/admin destination = %q, want http://localhost:8181", admin.DestinationURL)
+	}
+}
+
+func TestApplyEnvOverridesCORS(t *testing.T) {
+	cfg := &GatewayConfig{}
+	cfg.Server.CORS.AllowedOrigins = []string{"http://original:3000"}
+
+	t.Setenv("CORS_ALLOWED_ORIGINS", "http://a:3200, http://b:3201")
+	ApplyEnvOverrides(cfg)
+
+	want := []string{"http://a:3200", "http://b:3201"}
+	if len(cfg.Server.CORS.AllowedOrigins) != len(want) {
+		t.Fatalf("AllowedOrigins len = %d, want %d", len(cfg.Server.CORS.AllowedOrigins), len(want))
+	}
+	for i, got := range cfg.Server.CORS.AllowedOrigins {
+		if got != want[i] {
+			t.Errorf("AllowedOrigins[%d] = %q, want %q", i, got, want[i])
+		}
+	}
+}
+
+func TestApplyEnvOverridesPort(t *testing.T) {
+	cfg := &GatewayConfig{}
+	cfg.Server.Port = 8080
+
+	t.Setenv("PORT", "9090")
+	ApplyEnvOverrides(cfg)
+
+	if cfg.Server.Port != 9090 {
+		t.Errorf("Port = %d, want 9090", cfg.Server.Port)
 	}
 }
 
