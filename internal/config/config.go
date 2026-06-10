@@ -7,6 +7,7 @@ import (
 	"net/netip"
 	"net/url"
 	"os"
+	"strconv"
 	"strings"
 
 	"gopkg.in/yaml.v3"
@@ -199,6 +200,22 @@ func (c *GatewayConfig) SlogLevel() slog.Level {
 		return slog.LevelError
 	default:
 		return slog.LevelInfo
+	}
+}
+
+// ApplyEnvOverrides overrides key config fields from environment variables
+// so that MasterEnv can manage ports and URLs via .env files.
+func ApplyEnvOverrides(cfg *GatewayConfig) {
+	if v := os.Getenv("PORT"); v != "" {
+		if port, err := strconv.Atoi(v); err == nil && port > 0 && port <= 65535 {
+			cfg.Server.Port = port
+		}
+	}
+	if v := os.Getenv("AUTH_SERVICE_URL"); v != "" {
+		cfg.AuthServiceURL = v
+	}
+	if v := os.Getenv("AUTH_FRONT_URL"); v != "" {
+		cfg.AuthFrontURL = v
 	}
 }
 

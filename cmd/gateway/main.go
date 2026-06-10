@@ -16,16 +16,21 @@ import (
 	"github.com/custhome/ch-api-gateway/internal/app"
 	"github.com/custhome/ch-api-gateway/internal/config"
 	"github.com/custhome/ch-api-gateway/internal/server"
+	"github.com/joho/godotenv"
 )
 
 func main() {
 	configPath := flag.String("config", "config.yaml", "chemin du fichier de configuration de routage")
 	flag.Parse()
 
+	_ = godotenv.Load()
+
 	cfg, err := config.Load(*configPath)
 	if err != nil {
 		log.Fatalf("démarrage impossible: %v", err)
 	}
+
+	config.ApplyEnvOverrides(cfg)
 
 	logger := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: cfg.SlogLevel()}))
 	slog.SetDefault(logger)
