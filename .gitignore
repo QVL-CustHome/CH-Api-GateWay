@@ -6,6 +6,11 @@
 coverage.out
 coverage.html
 
+# Env (secrets — jamais commités)
+.env
+.env.*
+!.env.example
+
 # IDE
 .idea/
 .vscode/

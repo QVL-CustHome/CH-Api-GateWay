@@ -217,6 +217,18 @@ func ApplyEnvOverrides(cfg *GatewayConfig) {
 	if v := os.Getenv("AUTH_FRONT_URL"); v != "" {
 		cfg.AuthFrontURL = v
 	}
+	if v := os.Getenv("CORS_ALLOWED_ORIGINS"); v != "" {
+		origins := strings.Split(v, ",")
+		cleaned := make([]string, 0, len(origins))
+		for _, o := range origins {
+			if t := strings.TrimSpace(o); t != "" {
+				cleaned = append(cleaned, t)
+			}
+		}
+		if len(cleaned) > 0 {
+			cfg.Server.CORS.AllowedOrigins = cleaned
+		}
+	}
 }
 
 func validateHTTPURL(raw string) error {
