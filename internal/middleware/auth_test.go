@@ -137,21 +137,37 @@ func TestAuthTokenFromCookieOrHeader(t *testing.T) {
 }
 
 // US-12 : matrice de redirection des navigateurs non authentifiés.
+// La cible de retour est transmise via cookie ch_redirect (Referer),
+// l'URL du login reste propre (pas de query param redirect).
 func TestBrowserRedirectToAuthFront(t *testing.T) {
 	const front = "http://localhost:3000/login"
 
 	cases := []struct {
-		name         string
-		frontURL     string
-		accept       string
-		authStatus   int // statut renvoyé par le service d'auth (0 = pas de token envoyé)
-		wantStatus   int
-		wantLocation string
+		name           string
+		frontURL       string
+		accept         string
+		referer        string
+		authStatus     int
+		wantStatus     int
+		wantLocation   string
+		wantCookieSet  bool
+		wantCookieVal  string
 	}{
 		{
-			name:     "navigateur sans token vers 302 front avec redirect",
+			name:     "navigateur sans token vers 302 front avec cookie redirect",
 			frontURL: front, accept: "text/html,application/xhtml+xml",
-			wantStatus: http.StatusFound, wantLocation: front + "?redirect=%2Fapi%2Fprotected%2Fdata%3Fpage%3D2",
+			referer:       "http://localhost:3201/users",
+			wantStatus:    http.StatusFound,
+			wantLocation:  front,
+			wantCookieSet: true,
+			wantCookieVal: "http%3A%2F%2Flocalhost%3A3201%2Fusers",
+		},
+		{
+			name:     "navigateur sans Referer : 302 sans cookie",
+			frontURL: front, accept: "text/html",
+			wantStatus:    http.StatusFound,
+			wantLocation:  front,
+			wantCookieSet: false,
 		},
 		{
 			name:     "appel API sans token garde son 401",
@@ -171,7 +187,11 @@ func TestBrowserRedirectToAuthFront(t *testing.T) {
 		{
 			name:     "navigateur avec session expiree (401 du service) vers 302",
 			frontURL: front, accept: "text/html", authStatus: http.StatusUnauthorized,
-			wantStatus: http.StatusFound, wantLocation: front + "?redirect=%2Fapi%2Fprotected%2Fdata%3Fpage%3D2",
+			referer:       "http://localhost:3201/dashboard",
+			wantStatus:    http.StatusFound,
+			wantLocation:  front,
+			wantCookieSet: true,
+			wantCookieVal: "http%3A%2F%2Flocalhost%3A3201%2Fdashboard",
 		},
 		{
 			name:     "navigateur authentifie sans role (403) conserve, pas de boucle",
@@ -192,6 +212,9 @@ func TestBrowserRedirectToAuthFront(t *testing.T) {
 			if tc.accept != "" {
 				req.Header.Set("Accept", tc.accept)
 			}
+			if tc.referer != "" {
+				req.Header.Set("Referer", tc.referer)
+			}
 			if tc.authStatus != 0 {
 				req.Header.Set("Authorization", "Bearer token-teste-par-le-service")
 			}
@@ -204,16 +227,24 @@ func TestBrowserRedirectToAuthFront(t *testing.T) {
 			if got := rec.Header().Get("Location"); got != tc.wantLocation {
 				t.Errorf("Location = %q, want %q", got, tc.wantLocation)
 			}
-		})
-	}
-}
 
-// US-12 : les paramètres déjà présents dans l'URL du front sont préservés.
-func TestLoginRedirectURLPreservesExistingQuery(t *testing.T) {
-	got := loginRedirectURL("http://localhost:3000/login?theme=dark", "/api/x")
-	want := "http://localhost:3000/login?redirect=%2Fapi%2Fx&theme=dark"
-	if got != want {
-		t.Errorf("loginRedirectURL = %q, want %q", got, want)
+			var foundCookie *http.Cookie
+			for _, c := range rec.Result().Cookies() {
+				if c.Name == "ch_redirect" {
+					foundCookie = c
+					break
+				}
+			}
+			if tc.wantCookieSet {
+				if foundCookie == nil {
+					t.Error("cookie ch_redirect attendu mais absent")
+				} else if foundCookie.Value != tc.wantCookieVal {
+					t.Errorf("cookie ch_redirect = %q, want %q", foundCookie.Value, tc.wantCookieVal)
+				}
+			} else if foundCookie != nil && tc.wantStatus == http.StatusFound {
+				t.Errorf("cookie ch_redirect inattendu : %q", foundCookie.Value)
+			}
+		})
 	}
 }
 
