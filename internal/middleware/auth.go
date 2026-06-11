@@ -60,30 +60,27 @@ func NewAuthClient(url string, timeout time.Duration, cookieName, authFrontURL s
 	}
 }
 
-// US-12 : sur un 401, un navigateur est redirigé vers la page de connexion
-// avec l'URL d'origine en paramètre `redirect` ; les appels API gardent le
-// 401 brut. Le middleware n'enveloppant que les routes protégées, les
-// routes publiques (/api/auth…) sont structurellement hors du mécanisme —
-// aucune boucle de redirection possible.
+// US-12 : sur un 401, un navigateur est redirigé vers la page de connexion ;
+// les appels API gardent le 401 brut. La cible de retour est transmise via
+// un cookie ch_redirect (max 5 min) au lieu d'un query param, pour garder
+// l'URL du login propre. Le middleware n'enveloppant que les routes
+// protégées, les routes publiques (/api/auth…) sont structurellement hors
+// du mécanisme — aucune boucle de redirection possible.
 func (c *AuthClient) unauthorized(w http.ResponseWriter, r *http.Request) {
 	if c.authFrontURL != "" && strings.Contains(r.Header.Get("Accept"), "text/html") {
-		http.Redirect(w, r, loginRedirectURL(c.authFrontURL, r.URL.RequestURI()), http.StatusFound)
+		if referer := r.Header.Get("Referer"); referer != "" {
+			http.SetCookie(w, &http.Cookie{
+				Name:     "ch_redirect",
+				Value:    url.QueryEscape(referer),
+				Path:     "/",
+				MaxAge:   300,
+				SameSite: http.SameSiteLaxMode,
+			})
+		}
+		http.Redirect(w, r, c.authFrontURL, http.StatusFound)
 		return
 	}
 	http.Error(w, "Unauthorized", http.StatusUnauthorized)
-}
-
-// Construit {authFrontURL}?redirect={target encodé}, en préservant
-// d'éventuels paramètres déjà présents dans l'URL du front.
-func loginRedirectURL(front, target string) string {
-	u, err := url.Parse(front)
-	if err != nil {
-		return front
-	}
-	q := u.Query()
-	q.Set("redirect", target)
-	u.RawQuery = q.Encode()
-	return u.String()
 }
 
 func AuthMiddleware(authClient *AuthClient, portal string, next http.Handler) http.Handler {
