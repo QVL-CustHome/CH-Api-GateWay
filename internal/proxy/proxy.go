@@ -92,7 +92,7 @@ func NewRouter(cfg *config.GatewayConfig, protect func(portal string, next http.
 			if protect == nil {
 				return nil, fmt.Errorf("la route %s exige require_auth mais aucun middleware d'authentification n'est fourni", route.PathPrefix)
 			}
-			// US-09 : chaque route protégée porte son portail.
+
 			handler = protect(route.Portal, handler)
 		}
 

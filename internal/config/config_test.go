@@ -328,7 +328,6 @@ routes:
 	}
 }
 
-// US-11 : nom du cookie porteur du token — défaut ch_token, surchargeable.
 func TestLoadAuthCookieName(t *testing.T) {
 	base := `
 server:
@@ -355,7 +354,6 @@ routes:
 	}
 }
 
-// US-12 : auth_front_url optionnelle mais validée si présente.
 func TestLoadAuthFrontURL(t *testing.T) {
 	base := `
 server:
@@ -387,7 +385,6 @@ routes:
 	}
 }
 
-// US-09 : une route protégée sans portail est une erreur de configuration.
 func TestLoadRequireAuthWithoutPortal(t *testing.T) {
 	yaml := `
 server:
@@ -407,7 +404,6 @@ routes:
 	}
 }
 
-// US-09 : un portail composé d'espaces est traité comme absent.
 func TestLoadRequireAuthWithBlankPortal(t *testing.T) {
 	yaml := `
 server:
@@ -424,7 +420,6 @@ routes:
 	}
 }
 
-// US-09 : une route publique n'a pas besoin de portail.
 func TestLoadPublicRouteWithoutPortal(t *testing.T) {
 	yaml := `
 server:
@@ -696,8 +691,6 @@ routes:
 	}
 }
 
-// US-8.4 : la configuration livrée doit être valide et exposer la route
-// d'administration, protégée et rattachée au portail "portail_admin".
 func TestLoadShippedConfigHasAdminRoute(t *testing.T) {
 	cfg, err := Load("../../config.yaml")
 	if err != nil {

@@ -517,7 +517,7 @@ func TestRouterAppliesProtectionOnlyToProtectedRoutes(t *testing.T) {
 	protectCalls := 0
 	var protectedPortal string
 	protect := func(portal string, next http.Handler) http.Handler {
-		// US-09 : le routeur transmet le portail de la route au middleware.
+
 		protectedPortal = portal
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			protectCalls++

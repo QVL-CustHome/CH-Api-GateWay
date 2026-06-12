@@ -10,10 +10,8 @@ import (
 
 const validAuthJSON = `{"user_id":"123e4567-e89b-12d3-a456-426614174000","role":"admin"}`
 
-// Portail utilisé par défaut dans les tests du middleware (US-09).
 const testPortal = "portail_test"
 
-// Cookie porteur du token dans les tests (US-11).
 const testCookieName = "ch_token"
 
 func TestExtractBearerToken(t *testing.T) {
@@ -94,14 +92,13 @@ func serveAuth(t *testing.T, authURL, authorization string, extraHeaders map[str
 	return rec, nextCalled, nextHeaders
 }
 
-// US-11 : matrice cookie/header — le header prime, le cookie est le fallback.
 func TestAuthTokenFromCookieOrHeader(t *testing.T) {
 	cases := []struct {
 		name          string
 		authorization string
 		cookie        string
 		wantStatus    int
-		wantAuthSent  string // Authorization attendu côté service d'auth
+		wantAuthSent  string
 	}{
 		{"cookie seul", "", "token-cookie", http.StatusOK, "Bearer token-cookie"},
 		{"header seul", "Bearer token-header", "", http.StatusOK, "Bearer token-header"},
@@ -136,22 +133,19 @@ func TestAuthTokenFromCookieOrHeader(t *testing.T) {
 	}
 }
 
-// US-12 : matrice de redirection des navigateurs non authentifiés.
-// La cible de retour est transmise via cookie ch_redirect (Referer),
-// l'URL du login reste propre (pas de query param redirect).
 func TestBrowserRedirectToAuthFront(t *testing.T) {
 	const front = "http://localhost:3000/login"
 
 	cases := []struct {
-		name           string
-		frontURL       string
-		accept         string
-		referer        string
-		authStatus     int
-		wantStatus     int
-		wantLocation   string
-		wantCookieSet  bool
-		wantCookieVal  string
+		name          string
+		frontURL      string
+		accept        string
+		referer       string
+		authStatus    int
+		wantStatus    int
+		wantLocation  string
+		wantCookieSet bool
+		wantCookieVal string
 	}{
 		{
 			name:     "navigateur sans token vers 302 front avec cookie redirect",
@@ -248,7 +242,6 @@ func TestBrowserRedirectToAuthFront(t *testing.T) {
 	}
 }
 
-// US-11 : un autre cookie que celui configuré ne donne jamais accès.
 func TestAuthIgnoresOtherCookies(t *testing.T) {
 	auth, receivedAuth := authBackend(t, http.StatusOK, validAuthJSON)
 
@@ -266,7 +259,6 @@ func TestAuthIgnoresOtherCookies(t *testing.T) {
 	}
 }
 
-// US-09 : le portail de la route est transmis au service d'auth via X-Portal.
 func TestAuthSendsPortalHeader(t *testing.T) {
 	auth, _, receivedPortal := authBackendWithPortal(t, http.StatusOK, validAuthJSON)
 
@@ -280,7 +272,6 @@ func TestAuthSendsPortalHeader(t *testing.T) {
 	}
 }
 
-// US-10 : l'IP client résolue (contexte IPExtractor) est transmise au /validate.
 func TestAuthSendsClientIP(t *testing.T) {
 	var receivedClientIP string
 	auth := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -307,13 +298,12 @@ func TestAuthSendsClientIP(t *testing.T) {
 	if rec.Code != http.StatusOK {
 		t.Fatalf("statut = %d, want 200", rec.Code)
 	}
-	// httptest.NewRequest fixe RemoteAddr à 192.0.2.1:1234.
+
 	if receivedClientIP != "192.0.2.1" {
 		t.Errorf("X-Client-IP reçu par le service d'auth = %q, want 192.0.2.1", receivedClientIP)
 	}
 }
 
-// US-10 : sans IP résolue en contexte, aucun X-Client-IP n'est envoyé au /validate.
 func TestAuthOmitsClientIPWithoutContext(t *testing.T) {
 	clientIPSent := false
 	auth := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -333,7 +323,6 @@ func TestAuthOmitsClientIPWithoutContext(t *testing.T) {
 	}
 }
 
-// US-09 : un X-Portal forgé par le client ne doit jamais remplacer celui de la route.
 func TestSpoofedPortalHeaderIsIgnored(t *testing.T) {
 	auth, _, receivedPortal := authBackendWithPortal(t, http.StatusOK, validAuthJSON)
 	forged := map[string]string{HeaderPortal: "portail-forge"}
