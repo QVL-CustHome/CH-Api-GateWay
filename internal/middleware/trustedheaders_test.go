@@ -34,8 +34,6 @@ func TestStripUntrustedHeadersRemovesForgedUserHeaders(t *testing.T) {
 	}
 }
 
-// US-10 : un X-Client-IP forgé est purgé ; sans IP résolue en contexte,
-// aucun X-Client-IP n'est transmis.
 func TestStripUntrustedHeadersPurgesForgedClientIP(t *testing.T) {
 	var seenClientIP string
 	next := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -53,7 +51,6 @@ func TestStripUntrustedHeadersPurgesForgedClientIP(t *testing.T) {
 	}
 }
 
-// US-10 : l'IP résolue par l'IPExtractor remplace toute valeur entrante.
 func TestStripUntrustedHeadersInjectsResolvedClientIP(t *testing.T) {
 	var seenClientIP string
 	next := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -67,11 +64,10 @@ func TestStripUntrustedHeadersInjectsResolvedClientIP(t *testing.T) {
 	}
 
 	req := httptest.NewRequest(http.MethodGet, "/api/public/info", nil)
-	req.Header.Set(HeaderClientIP, "10.6.6.6") // tentative de forge
+	req.Header.Set(HeaderClientIP, "10.6.6.6")
 	rec := httptest.NewRecorder()
 	extractor.Middleware(StripUntrustedHeadersMiddleware(next)).ServeHTTP(rec, req)
 
-	// httptest.NewRequest fixe RemoteAddr à 192.0.2.1:1234.
 	if seenClientIP != "192.0.2.1" {
 		t.Errorf("X-Client-IP = %q, want 192.0.2.1 (IP résolue, forge écrasée)", seenClientIP)
 	}

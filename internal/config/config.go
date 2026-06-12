@@ -21,8 +21,6 @@ const DefaultMaxBodyBytes = 10 << 20
 
 const DefaultAuthServiceTimeoutMs = 100
 
-// US-11 : cookie HttpOnly posé par l'Authenticator au login,
-// lu en complément du header Authorization (qui prime).
 const DefaultAuthCookieName = "ch_token"
 
 type RouteConfig struct {
@@ -30,9 +28,7 @@ type RouteConfig struct {
 	DestinationURL string `yaml:"destination_url" json:"destination_url"`
 	StripPrefix    bool   `yaml:"strip_prefix" json:"strip_prefix"`
 	RequireAuth    bool   `yaml:"require_auth" json:"require_auth"`
-	// US-09 (sprint Api Authenticator) : portail servi par cette route,
-	// transmis à l'Authenticator via X-Portal pour résoudre le rôle.
-	// Obligatoire dès que require_auth est actif.
+
 	Portal string `yaml:"portal" json:"portal"`
 }
 
@@ -62,12 +58,10 @@ type GatewayConfig struct {
 		CORS      CORSConfig      `yaml:"cors" json:"cors"`
 		RateLimit RateLimitConfig `yaml:"rate_limit" json:"rate_limit"`
 	} `yaml:"server" json:"server"`
-	AuthServiceURL       string        `yaml:"auth_service_url" json:"auth_service_url"`
-	AuthServiceTimeoutMs int           `yaml:"auth_service_timeout_ms" json:"auth_service_timeout_ms"`
-	AuthCookieName       string        `yaml:"auth_cookie_name" json:"auth_cookie_name"`
-	// US-12 : page de connexion du front d'authentification. Si définie,
-	// un navigateur (Accept: text/html) non authentifié reçoit un 302 vers
-	// cette URL au lieu d'un 401 ; les appels API gardent le 401.
+	AuthServiceURL       string `yaml:"auth_service_url" json:"auth_service_url"`
+	AuthServiceTimeoutMs int    `yaml:"auth_service_timeout_ms" json:"auth_service_timeout_ms"`
+	AuthCookieName       string `yaml:"auth_cookie_name" json:"auth_cookie_name"`
+
 	AuthFrontURL string        `yaml:"auth_front_url" json:"auth_front_url"`
 	Routes       []RouteConfig `yaml:"routes" json:"routes"`
 }
@@ -203,8 +197,6 @@ func (c *GatewayConfig) SlogLevel() slog.Level {
 	}
 }
 
-// ApplyEnvOverrides overrides key config fields from environment variables
-// so that MasterEnv can manage ports and URLs via .env files.
 func ApplyEnvOverrides(cfg *GatewayConfig) {
 	if v := os.Getenv("PORT"); v != "" {
 		if port, err := strconv.Atoi(v); err == nil && port > 0 && port <= 65535 {

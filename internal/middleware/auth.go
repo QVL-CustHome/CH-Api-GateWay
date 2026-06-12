@@ -18,12 +18,9 @@ var (
 const (
 	HeaderUserID   = "X-User-Id"
 	HeaderUserRole = "X-User-Role"
-	// US-09 : portail visé par la route, transmis à l'Authenticator
-	// qui résout le rôle de l'utilisateur pour CE portail.
+
 	HeaderPortal = "X-Portal"
-	// US-10 : IP client réelle (résolue via trusted_proxies), transmise à
-	// l'Authenticator pour la whitelist IP par utilisateur. Header de
-	// confiance : purgé s'il vient de l'extérieur (trustedheaders.go).
+
 	HeaderClientIP = "X-Client-IP"
 )
 
@@ -37,10 +34,9 @@ const maxAuthResponseBytes = 64 << 10
 type AuthClient struct {
 	client  *http.Client
 	authURL string
-	// US-11 : nom du cookie HttpOnly porteur du token (fallback du header).
+
 	cookieName string
-	// US-12 : page de connexion du front d'auth — 302 pour les navigateurs
-	// non authentifiés quand elle est définie, 401 sinon.
+
 	authFrontURL string
 }
 
@@ -60,12 +56,6 @@ func NewAuthClient(url string, timeout time.Duration, cookieName, authFrontURL s
 	}
 }
 
-// US-12 : sur un 401, un navigateur est redirigé vers la page de connexion ;
-// les appels API gardent le 401 brut. La cible de retour est transmise via
-// un cookie ch_redirect (max 5 min) au lieu d'un query param, pour garder
-// l'URL du login propre. Le middleware n'enveloppant que les routes
-// protégées, les routes publiques (/api/auth…) sont structurellement hors
-// du mécanisme — aucune boucle de redirection possible.
 func (c *AuthClient) unauthorized(w http.ResponseWriter, r *http.Request) {
 	if c.authFrontURL != "" && strings.Contains(r.Header.Get("Accept"), "text/html") {
 		if referer := r.Header.Get("Referer"); referer != "" {
@@ -101,9 +91,9 @@ func AuthMiddleware(authClient *AuthClient, portal string, next http.Handler) ht
 			return
 		}
 		req.Header.Set("Authorization", "Bearer "+token)
-		// US-09 : l'Authenticator résout roles[X-Portal] → 403 si aucun rôle.
+
 		req.Header.Set(HeaderPortal, portal)
-		// US-10 : IP client réelle pour les comptes whitelist (claim ip du token).
+
 		if clientIP := ClientIPFromContext(r.Context()); clientIP != "" {
 			req.Header.Set(HeaderClientIP, clientIP)
 		}
@@ -134,11 +124,10 @@ func AuthMiddleware(authClient *AuthClient, portal string, next http.Handler) ht
 			}
 			next.ServeHTTP(w, r)
 		case http.StatusUnauthorized:
-			// US-12 : session absente/expirée → page de connexion pour un navigateur.
+
 			authClient.unauthorized(w, r)
 		case http.StatusForbidden:
-			// Authentifié mais aucun rôle sur ce portail : rediriger vers le
-			// login n'y changerait rien (et bouclerait), le 403 est conservé.
+
 			http.Error(w, http.StatusText(resp.StatusCode), resp.StatusCode)
 		default:
 
@@ -147,10 +136,6 @@ func AuthMiddleware(authClient *AuthClient, portal string, next http.Handler) ht
 	})
 }
 
-// US-11 : le header Authorization prime ; en son absence, le token est lu
-// depuis le cookie HttpOnly posé au login par l'Authenticator. Un header
-// présent mais malformé reste une erreur — pas de repli silencieux.
-// Dans les deux cas le token part en Authorization: Bearer vers /validate.
 func extractToken(r *http.Request, cookieName string) (string, error) {
 	if r.Header.Get("Authorization") != "" {
 		return extractBearerToken(r)
