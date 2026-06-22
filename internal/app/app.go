@@ -47,6 +47,7 @@ func BuildHandler(cfg *config.GatewayConfig, logger *slog.Logger) (http.Handler,
 	}
 
 	handler = middleware.LoggingMiddleware(logger, handler)
+	handler = middleware.SecurityHeadersMiddleware(handler)
 	handler = extractor.Middleware(handler)
 	handler = middleware.CorrelationIDMiddleware(handler)
 
