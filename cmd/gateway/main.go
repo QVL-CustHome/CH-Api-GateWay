@@ -65,7 +65,7 @@ func main() {
 	defer stop()
 
 	addr := fmt.Sprintf(":%d", cfg.Server.Port)
-	backendTimeout := time.Duration(cfg.Server.TimeoutSeconds) * time.Second
+	backendTimeout := time.Duration(cfg.MaxEffectiveTimeoutSeconds()) * time.Second
 	srv := server.New(addr, handler, backendTimeout)
 
 	logger.Info("API Gateway en écoute", slog.String("addr", addr))

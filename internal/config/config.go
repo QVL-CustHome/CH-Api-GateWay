@@ -30,6 +30,16 @@ type RouteConfig struct {
 	RequireAuth    bool   `yaml:"require_auth" json:"require_auth"`
 
 	Portal string `yaml:"portal" json:"portal"`
+
+	MaxBodyBytes   *int64 `yaml:"max_body_bytes" json:"max_body_bytes"`
+	TimeoutSeconds *int   `yaml:"timeout_seconds" json:"timeout_seconds"`
+}
+
+func (r RouteConfig) EffectiveTimeoutSeconds(serverDefault int) int {
+	if r.TimeoutSeconds != nil {
+		return *r.TimeoutSeconds
+	}
+	return serverDefault
 }
 
 type CORSConfig struct {
@@ -180,8 +190,26 @@ func (c *GatewayConfig) validate() error {
 		if r.RequireAuth && strings.TrimSpace(r.Portal) == "" {
 			return fmt.Errorf("routes[%d] (%s) exige require_auth mais ne définit pas de portal : l'Authenticator ne pourrait pas résoudre le rôle (US-09)", i, r.PathPrefix)
 		}
+
+		if r.MaxBodyBytes != nil && *r.MaxBodyBytes < 1 {
+			return fmt.Errorf("routes[%d].max_body_bytes doit être >= 1, reçu %d", i, *r.MaxBodyBytes)
+		}
+
+		if r.TimeoutSeconds != nil && *r.TimeoutSeconds < 1 {
+			return fmt.Errorf("routes[%d].timeout_seconds doit être >= 1, reçu %d", i, *r.TimeoutSeconds)
+		}
 	}
 	return nil
+}
+
+func (c *GatewayConfig) MaxEffectiveTimeoutSeconds() int {
+	longest := c.Server.TimeoutSeconds
+	for _, r := range c.Routes {
+		if t := r.EffectiveTimeoutSeconds(c.Server.TimeoutSeconds); t > longest {
+			longest = t
+		}
+	}
+	return longest
 }
 
 func (c *GatewayConfig) SlogLevel() slog.Level {

@@ -32,7 +32,7 @@ func BuildHandler(cfg *config.GatewayConfig, logger *slog.Logger) (http.Handler,
 
 	handler := middleware.CORSMiddleware(cfg.Server.CORS, mux)
 	handler = middleware.StripUntrustedHeadersMiddleware(handler)
-	handler = middleware.MaxBodyBytesMiddleware(cfg.Server.MaxBodyBytes, handler)
+	handler = middleware.MaxBodyBytesPerRouteMiddleware(cfg.Server.MaxBodyBytes, bodyLimitOverrides(cfg), handler)
 
 	extractor, err := middleware.NewIPExtractor(cfg.Server.RateLimit.TrustedProxies)
 	if err != nil {
@@ -52,4 +52,17 @@ func BuildHandler(cfg *config.GatewayConfig, logger *slog.Logger) (http.Handler,
 	handler = middleware.CorrelationIDMiddleware(handler)
 
 	return handler, onShutdown, nil
+}
+
+func bodyLimitOverrides(cfg *config.GatewayConfig) []middleware.BodyLimitOverride {
+	var overrides []middleware.BodyLimitOverride
+	for _, route := range cfg.Routes {
+		if route.MaxBodyBytes != nil {
+			overrides = append(overrides, middleware.BodyLimitOverride{
+				PathPrefix: route.PathPrefix,
+				Limit:      *route.MaxBodyBytes,
+			})
+		}
+	}
+	return overrides
 }
