@@ -191,6 +191,10 @@ func (c *GatewayConfig) validate() error {
 			return fmt.Errorf("routes[%d] (%s) exige require_auth mais ne définit pas de portal : l'Authenticator ne pourrait pas résoudre le rôle (US-09)", i, r.PathPrefix)
 		}
 
+		if r.RequireAuth && !strings.HasPrefix(r.Portal, "portail_") {
+			return fmt.Errorf("routes[%d] (%s) définit un portal invalide %q : la valeur doit commencer par \"portail_\" pour être acceptée par l'Authenticator", i, r.PathPrefix, r.Portal)
+		}
+
 		if r.MaxBodyBytes != nil && *r.MaxBodyBytes < 1 {
 			return fmt.Errorf("routes[%d].max_body_bytes doit être >= 1, reçu %d", i, *r.MaxBodyBytes)
 		}
