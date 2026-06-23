@@ -75,8 +75,6 @@ func TimeoutMiddleware(timeout time.Duration, next http.Handler) http.Handler {
 func NewRouter(cfg *config.GatewayConfig, protect func(portal string, next http.Handler) http.Handler) (http.Handler, error) {
 	mux := http.NewServeMux()
 
-	timeout := time.Duration(cfg.Server.TimeoutSeconds) * time.Second
-
 	for _, route := range cfg.Routes {
 		var handler http.Handler
 		handler, err := NewProxyHandler(route)
@@ -84,6 +82,7 @@ func NewRouter(cfg *config.GatewayConfig, protect func(portal string, next http.
 			return nil, err
 		}
 
+		timeout := time.Duration(route.EffectiveTimeoutSeconds(cfg.Server.TimeoutSeconds)) * time.Second
 		if timeout > 0 {
 			handler = TimeoutMiddleware(timeout, handler)
 		}
