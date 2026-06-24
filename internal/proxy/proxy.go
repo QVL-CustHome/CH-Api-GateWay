@@ -13,6 +13,38 @@ import (
 	"github.com/custhome/ch-api-gateway/internal/config"
 )
 
+var internalPathPrefixes = []string{"/internal"}
+
+func isInternalPath(path string) bool {
+	for _, prefix := range internalPathPrefixes {
+		if path == prefix || strings.HasPrefix(path, prefix+"/") {
+			return true
+		}
+	}
+	return false
+}
+
+func forwardedPath(route config.RouteConfig, incomingPath string) string {
+	if !route.StripPrefix {
+		return incomingPath
+	}
+	stripped := strings.TrimPrefix(incomingPath, route.PathPrefix)
+	if stripped == "" {
+		return "/"
+	}
+	return stripped
+}
+
+func BlockInternalPaths(route config.RouteConfig, next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if isInternalPath(forwardedPath(route, r.URL.Path)) {
+			http.Error(w, "404 page not found", http.StatusNotFound)
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
 type ProxyHandler struct {
 	TargetURL    *url.URL
 	ReverseProxy *httputil.ReverseProxy
@@ -27,10 +59,7 @@ func NewProxyHandler(route config.RouteConfig) (*ProxyHandler, error) {
 	proxy := &httputil.ReverseProxy{
 		Rewrite: func(pr *httputil.ProxyRequest) {
 			if route.StripPrefix {
-				pr.Out.URL.Path = strings.TrimPrefix(pr.Out.URL.Path, route.PathPrefix)
-				if pr.Out.URL.Path == "" {
-					pr.Out.URL.Path = "/"
-				}
+				pr.Out.URL.Path = forwardedPath(route, pr.Out.URL.Path)
 				pr.Out.URL.RawPath = ""
 			}
 			pr.SetURL(parsedURL)
@@ -94,6 +123,8 @@ func NewRouter(cfg *config.GatewayConfig, protect func(portal string, next http.
 
 			handler = protect(route.Portal, handler)
 		}
+
+		handler = BlockInternalPaths(route, handler)
 
 		mux.Handle(route.PathPrefix, handler)
 		mux.Handle(route.PathPrefix+"/", handler)
