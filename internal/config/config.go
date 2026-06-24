@@ -23,6 +23,12 @@ const DefaultAuthServiceTimeoutMs = 100
 
 const DefaultAuthCookieName = "ch_token"
 
+const DefaultEnvironment = "development"
+
+const EnvironmentProduction = "production"
+
+const WildcardOrigin = "*"
+
 type RouteConfig struct {
 	PathPrefix     string `yaml:"path_prefix" json:"path_prefix"`
 	DestinationURL string `yaml:"destination_url" json:"destination_url"`
@@ -57,7 +63,8 @@ type RateLimitConfig struct {
 }
 
 type GatewayConfig struct {
-	Server struct {
+	Environment string `yaml:"environment" json:"environment"`
+	Server      struct {
 		Port int `yaml:"port" json:"port"`
 
 		TimeoutSeconds int `yaml:"timeout_seconds" json:"timeout_seconds"`
@@ -110,6 +117,11 @@ func Load(path string) (*GatewayConfig, error) {
 	}
 	cfg.Server.LogLevel = strings.ToUpper(cfg.Server.LogLevel)
 
+	if strings.TrimSpace(cfg.Environment) == "" {
+		cfg.Environment = DefaultEnvironment
+	}
+	cfg.Environment = strings.ToLower(strings.TrimSpace(cfg.Environment))
+
 	if err := cfg.validate(); err != nil {
 		return nil, fmt.Errorf("configuration invalide dans %q: %w", path, err)
 	}
@@ -131,6 +143,9 @@ func (c *GatewayConfig) validate() error {
 	}
 	if c.Server.CORS.MaxAgeSeconds < 0 {
 		return fmt.Errorf("server.cors.max_age_seconds doit être >= 0, reçu %d", c.Server.CORS.MaxAgeSeconds)
+	}
+	if err := c.validateProductionCORS(); err != nil {
+		return err
 	}
 	switch c.Server.LogLevel {
 	case "DEBUG", "INFO", "WARN", "ERROR":
@@ -229,11 +244,14 @@ func (c *GatewayConfig) SlogLevel() slog.Level {
 	}
 }
 
-func ApplyEnvOverrides(cfg *GatewayConfig) {
+func ApplyEnvOverrides(cfg *GatewayConfig) error {
 	if v := os.Getenv("PORT"); v != "" {
 		if port, err := strconv.Atoi(v); err == nil && port > 0 && port <= 65535 {
 			cfg.Server.Port = port
 		}
+	}
+	if v := os.Getenv("GATEWAY_ENV"); strings.TrimSpace(v) != "" {
+		cfg.Environment = strings.ToLower(strings.TrimSpace(v))
 	}
 	if v := os.Getenv("AUTH_SERVICE_URL"); v != "" {
 		cfg.AuthServiceURL = v
@@ -253,6 +271,24 @@ func ApplyEnvOverrides(cfg *GatewayConfig) {
 			cfg.Server.CORS.AllowedOrigins = cleaned
 		}
 	}
+
+	return cfg.validateProductionCORS()
+}
+
+func (c *GatewayConfig) IsProduction() bool {
+	return c.Environment == EnvironmentProduction
+}
+
+func (c *GatewayConfig) validateProductionCORS() error {
+	if !c.IsProduction() {
+		return nil
+	}
+	for _, origin := range c.Server.CORS.AllowedOrigins {
+		if strings.TrimSpace(origin) == WildcardOrigin {
+			return fmt.Errorf("server.cors.allowed_origins: le wildcard %q est interdit en environnement %q ; renseigner des origines explicites", WildcardOrigin, EnvironmentProduction)
+		}
+	}
+	return nil
 }
 
 func validateHTTPURL(raw string) error {

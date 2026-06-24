@@ -726,7 +726,9 @@ func TestApplyEnvOverridesCORS(t *testing.T) {
 	cfg.Server.CORS.AllowedOrigins = []string{"http://original:3000"}
 
 	t.Setenv("CORS_ALLOWED_ORIGINS", "http://a:3200, http://b:3201")
-	ApplyEnvOverrides(cfg)
+	if err := ApplyEnvOverrides(cfg); err != nil {
+		t.Fatalf("ApplyEnvOverrides() error = %v, want nil", err)
+	}
 
 	want := []string{"http://a:3200", "http://b:3201"}
 	if len(cfg.Server.CORS.AllowedOrigins) != len(want) {
@@ -744,7 +746,9 @@ func TestApplyEnvOverridesPort(t *testing.T) {
 	cfg.Server.Port = 8080
 
 	t.Setenv("PORT", "9090")
-	ApplyEnvOverrides(cfg)
+	if err := ApplyEnvOverrides(cfg); err != nil {
+		t.Fatalf("ApplyEnvOverrides() error = %v, want nil", err)
+	}
 
 	if cfg.Server.Port != 9090 {
 		t.Errorf("Port = %d, want 9090", cfg.Server.Port)

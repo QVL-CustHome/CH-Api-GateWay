@@ -30,7 +30,9 @@ func main() {
 		log.Fatalf("démarrage impossible: %v", err)
 	}
 
-	config.ApplyEnvOverrides(cfg)
+	if err := config.ApplyEnvOverrides(cfg); err != nil {
+		log.Fatalf("démarrage impossible: %v", err)
+	}
 
 	logger := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: cfg.SlogLevel()}))
 	slog.SetDefault(logger)
