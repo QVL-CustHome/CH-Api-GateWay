@@ -34,7 +34,7 @@ routes:
     destination_url: "http://localhost:8181"
     strip_prefix: true
     require_auth: false
-    portal: "custhome"
+    portal: "portail_home"
   - path_prefix: "/api/admin"
     destination_url: "http://localhost:8181"
     strip_prefix: true
@@ -44,6 +44,11 @@ routes:
     destination_url: "http://localhost:8182"
     strip_prefix: true
     require_auth: true
-    portal: "custhome"
+    portal: "portail_drive"
     max_body_bytes: 17825792
     timeout_seconds: 120
+  - path_prefix: "/api/budgy"
+    destination_url: "http://localhost:8183"
+    strip_prefix: true
+    require_auth: true
+    portal: "portail_budgy"
