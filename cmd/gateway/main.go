@@ -40,7 +40,11 @@ func main() {
 	logger.Info("configuration chargée",
 		slog.Int("routes", len(cfg.Routes)),
 		slog.String("log_level", cfg.Server.LogLevel),
+		slog.String("environment", cfg.Environment),
 	)
+	if cfg.IsDevelopment() && cfg.HasWildcardCORS() {
+		logger.Warn("wildcard CORS \"*\" actif en environnement development : strictement interdit en production, poser environment: production ou GATEWAY_ENV=production avant tout déploiement")
+	}
 	for _, r := range cfg.Routes {
 		logger.Info("route",
 			slog.String("path_prefix", r.PathPrefix),
