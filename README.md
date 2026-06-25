@@ -9,6 +9,7 @@ API Gateway de la plateforme **CustHome**. Point d'entrée HTTP unique qui route
 - [Fonctionnalités](#fonctionnalités)
 - [Démarrage rapide](#démarrage-rapide)
 - [Configuration](#configuration)
+- [Déploiement en production](#déploiement-en-production)
 - [Architecture](#architecture)
 - [Authentification](#authentification)
 - [Codes de réponse du gateway](#codes-de-réponse-du-gateway)
@@ -67,6 +68,7 @@ La configuration est **statique** : lue une seule fois au démarrage, validée s
 ### Exemple complet
 
 ```yaml
+environment: development    # development | production (défaut : development)
 server:
   port: 8080
   timeout_seconds: 5        # délai max d'une réponse backend (504 au-delà)
@@ -122,7 +124,7 @@ routes:
 
 | Champ | Type | Défaut | Notes |
 |---|---|---|---|
-| `allowed_origins` | []string | `[]` | `"*"` autorise toutes les origines |
+| `allowed_origins` | []string | `[]` | `"*"` autorise toutes les origines ; **rejeté au démarrage hors `environment: development`** (voir [Déploiement en production](#déploiement-en-production)) |
 | `allowed_methods` | []string | `[]` | comparaison insensible à la casse |
 | `allowed_headers` | []string | `[]` | renvoyés tels quels dans le preflight |
 | `max_age_seconds` | int | `0` | ≥ 0 ; omis si 0 |
@@ -131,6 +133,7 @@ routes:
 
 | Champ | Type | Défaut | Notes |
 |---|---|---|---|
+| `environment` | string | `development` | `development` ou `production` (insensible à la casse) ; pilote le durcissement CORS |
 | `auth_service_url` | string | `""` | URL http(s) ; requis si une route a `require_auth: true` |
 | `auth_service_timeout_ms` | int | `100` | ≥ 1 |
 | `routes` | []route | — | au moins une route requise |
@@ -143,6 +146,49 @@ routes:
 | `destination_url` | string | URL http(s) avec hôte |
 | `strip_prefix` | bool | retire `path_prefix` avant de proxifier |
 | `require_auth` | bool | exige un token Bearer valide |
+
+## Déploiement en production
+
+### Durcissement CORS
+
+Le wildcard CORS `allowed_origins: ["*"]` autorise n'importe quelle origine à appeler l'API : il est **interdit hors développement**.
+
+La validation est **fail-safe** : le wildcard n'est toléré **que** lorsque l'environnement vaut explicitement `development` (le défaut, pour ne pas gêner le dev local). Dès que l'environnement est autre chose (`production`, `staging`, etc.), un wildcard dans `allowed_origins` **fait échouer le démarrage** avec un message explicite — quelle que soit la façon dont l'environnement a été posé.
+
+En développement, si un wildcard est actif, le gateway émet un **`WARN` au démarrage** pour rappeler de poser `environment: production` avant tout déploiement. Ce log ne doit jamais apparaître en environnement déployé.
+
+### Poser l'environnement de production
+
+Deux moyens, dans l'ordre de priorité :
+
+| Moyen | Où | Priorité |
+|---|---|---|
+| Clé `environment: production` | en tête de `config.yaml` | base |
+| Variable `GATEWAY_ENV=production` | environnement du process (compose, manifest k8s, systemd…) | surcharge `config.yaml` |
+
+Recommandation : poser `environment: production` directement dans le `config.yaml` du déploiement de production. Le garde-fou CORS ne dépend alors d'**aucune** variable d'environnement qu'on pourrait oublier. `GATEWAY_ENV` reste disponible pour surcharger ponctuellement (ex. promouvoir une image identique d'un env à l'autre sans toucher au fichier).
+
+Exemple Docker Compose :
+
+```yaml
+services:
+  gateway:
+    image: ch-api-gateway
+    environment:
+      - GATEWAY_ENV=production
+```
+
+Le démarrage échoue (`log.Fatalf`) si la configuration de production embarque un wildcard CORS : corriger `allowed_origins` avec des origines explicites (ou via `CORS_ALLOWED_ORIGINS`) résout le blocage.
+
+### Variables d'environnement reconnues
+
+| Variable | Effet |
+|---|---|
+| `GATEWAY_ENV` | Surcharge `environment` (ex. `production`) |
+| `PORT` | Surcharge `server.port` |
+| `AUTH_SERVICE_URL` | Surcharge `auth_service_url` |
+| `AUTH_FRONT_URL` | Surcharge `auth_front_url` |
+| `CORS_ALLOWED_ORIGINS` | Surcharge `server.cors.allowed_origins` (liste séparée par des virgules) |
 
 ## Architecture
 

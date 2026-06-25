@@ -144,7 +144,7 @@ func (c *GatewayConfig) validate() error {
 	if c.Server.CORS.MaxAgeSeconds < 0 {
 		return fmt.Errorf("server.cors.max_age_seconds doit être >= 0, reçu %d", c.Server.CORS.MaxAgeSeconds)
 	}
-	if err := c.validateProductionCORS(); err != nil {
+	if err := c.validateCORS(); err != nil {
 		return err
 	}
 	switch c.Server.LogLevel {
@@ -272,23 +272,31 @@ func ApplyEnvOverrides(cfg *GatewayConfig) error {
 		}
 	}
 
-	return cfg.validateProductionCORS()
+	return cfg.validateCORS()
 }
 
 func (c *GatewayConfig) IsProduction() bool {
 	return c.Environment == EnvironmentProduction
 }
 
-func (c *GatewayConfig) validateProductionCORS() error {
-	if !c.IsProduction() {
-		return nil
-	}
+func (c *GatewayConfig) IsDevelopment() bool {
+	return c.Environment == DefaultEnvironment
+}
+
+func (c *GatewayConfig) HasWildcardCORS() bool {
 	for _, origin := range c.Server.CORS.AllowedOrigins {
 		if strings.TrimSpace(origin) == WildcardOrigin {
-			return fmt.Errorf("server.cors.allowed_origins: le wildcard %q est interdit en environnement %q ; renseigner des origines explicites", WildcardOrigin, EnvironmentProduction)
+			return true
 		}
 	}
-	return nil
+	return false
+}
+
+func (c *GatewayConfig) validateCORS() error {
+	if c.IsDevelopment() || !c.HasWildcardCORS() {
+		return nil
+	}
+	return fmt.Errorf("server.cors.allowed_origins: le wildcard %q est interdit hors environnement %q (environnement courant %q) ; renseigner des origines explicites", WildcardOrigin, DefaultEnvironment, c.Environment)
 }
 
 func validateHTTPURL(raw string) error {
