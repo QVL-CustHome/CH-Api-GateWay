@@ -122,6 +122,7 @@ func AuthMiddleware(authClient *AuthClient, portal string, next http.Handler) ht
 			if authData.Role != "" {
 				r.Header.Set(HeaderUserRole, authData.Role)
 			}
+			r.Header.Set("Authorization", "Bearer "+token)
 			next.ServeHTTP(w, r)
 		case http.StatusUnauthorized:
 
