@@ -12,6 +12,8 @@ server:
     allowed_origins:
       - "http://localhost:3200"
       - "http://localhost:3201"
+      - "http://localhost:3202"
+      - "http://localhost:3203"
     allowed_methods:
       - "GET"
       - "POST"
